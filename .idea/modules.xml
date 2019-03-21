@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ProjectModuleManager">
+    <modules>
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/experimentaldsl.iml" filepath="$PROJECT_DIR$/.idea/modules/experimentaldsl.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/experimentaldsl-build.iml" filepath="$PROJECT_DIR$/.idea/modules/experimentaldsl-build.iml" />
+    </modules>
+  </component>
+</project>
