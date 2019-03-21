@@ -6,31 +6,28 @@ package calcs
   *   -Parallel/Async capabilities
   *   -Diagnosable
   *
-  * And we have some peripheral goals that maybe we'll achieve as a by-product:
-  *   -Indifferent between Calculating and Loading, allowing different options for
+  * And we have a second closely related (but hopefully not too closely-coupled) goals:
   *   -Version Ids
   *     -Calculators produce version IDs
   *     -Logic is agnostic to version ID
+  *     -Indifferent between Calculating and Loading, allowing different options
+  *   -Diagnosability
+  *     -Final output knows all the version IDs used to build it
+  *     -Can draw the computation graph (either at compile-time or runtime?)
   *
-  * And some crazy goals that we can safely ignore:
-  *   -Implicit assembly: Given Calc[Unit, I], can build Calc[I,O] automatically
-  *     -Means complex pipeline composition can occur
-  *     -Major downside: you can't inspect the pipeline you built.
-  *       -Also, unlikely you ever get a pipeline so large that this becomes necessary.
-  *
-  * here's a simple control flow that hits Sequential, Split, Merge, and Multi-use:
+  * here's a simple control flow that hits Sequential, Split, Merge, and Multi-use/caching:
   *     ------>
-  *   A -> B -> D -> Persist
+  *   A -> B -> D -> E
   *     -> C ->
   *
   * And an alternative version of the pipe, which reads from a snapshot instead of recomputing:
   *     --------->
-  *   A ->  B   -> D -> Persist
+  *   A ->  B   -> D -> E
   *      CRunId ->
   *
   * And a logical inconsistent version, which uses different versions of the same data:
   *      ARunId ->
-  *   A ->  B   -> D -> Persist
+  *   A ->  B   -> D -> E
   *      -> C ->
   *
   * Here's a bunch of tools in the toolbox for achieving this:
@@ -50,15 +47,15 @@ package calcs
   */
 trait Journey {
 
-  // Let's start just defining the ins-outs of our pipeline.
-
   /**
     * Prinicples for Versioned Data:
     *
     * Version numbers increase over time.
     * Version numbers are unique to a Conceptual Model
-    *   (?) VersionNumber=(ModelVersion and DataVersion)?
+    *   (?) VersionNumber=(ModelVersion, DataVersion)?
     *   (?) OR have new iterations/migrations of a conceptual model start from scratch.
+    *   (?) OR do versions themselves know what kind of model they're associated with?
+    *       Version=(Model classpath, ModelVersion, DataVersion)
     *
     * Version numbers (incidentally, but not by decree) are at roots of all Calcs (in practice),
     *   if it's the latest you simply pipe in `getLatestVersion[T]` or `getLatestValidVersion[T]`,
@@ -69,7 +66,7 @@ trait Journey {
     *   `getLatestValidVersion[HeldPositions] andThen hydrate[HeldPositions] andThen calculateMetrics`
     */
   trait Version
-  case class VersionN(n: Int) extends Version //
+  case class VersionN(n: Int) extends Version // maybe needs literal type for extra use cases
   case object Latest extends Version
 
   trait Aout
@@ -82,27 +79,31 @@ trait Journey {
     * Here's another place we have to decide: is a Type alone enough to get the latest version,
     *   or do we also need the type/model version? Do we solve that with Tagged Types?
     * Or do we use a simple name/symbol identifier to map real things to types?
+    *
     */
-  def getLatestVersion[T]: Version // would need reflection/ClassTag
+  def getLatestVersion[T]: Version // would need reflection/ClassTag + tagged types
   def getLatestVersion(name: String): Version
   def getLatestVersion(name: String, modelVersion: Int): Version
   def getLatestVbyDate[T](date: Int): Version // etc.
 
+  def hydrate[T](v: Version): T
   val aHydrate: Version => Aout
-  val aHydrateLatest: () => Aout = () => aHydrate(getLatestVersion[Aout])
+  val hydrateLatest: () => Aout = () => aHydrate(getLatestVersion[Aout])
   val aCalc: () => Aout
   val bCalc: Aout => Bout
   val cCalc: Aout => Cout
   val dCalc: (Aout, Bout, Cout) => Dout
-
   val eCalc: (Eout, Dout) => Eout // recursive
 
   /**
     * How far can we get with just Function1? Looks pretty decent.
     */
   def pipelinePureFunction: Dout = {
-    val aval = aCalc()
-    dCalc(aval, bCalc(aval), cCalc(aval))
+    val pipeline: Version => Dout = { versionOfA =>
+      val aval = aHydrate(versionOfA)
+      dCalc(aval, bCalc(aval), cCalc(aval))
+    }
+    pipeline(VersionN(2))
   }
 
   /**
@@ -216,10 +217,10 @@ trait Journey {
     *   you could write it in terms of F : Monad; this way you can seamlessly switch between
     *   Future and IO at a later date if necessary,
     *   or use the Id monad (which is sync instead of async) for testing.
+    *
+    *   TODO
     */
   object PipeLineTagless {
-    // TODO
-
     import cats.Monad
     def pipelineTaglessFinal[F[_]: Monad]: F[Dout] = ???
   }
@@ -270,11 +271,36 @@ trait Journey {
   object FailOnInconsistent {
 
     // TODO would like this to fail compilation, but need literal types + more structure than Function1
-    val aval = VersionN(3) // should also fail for aHydrateLatest()
+    val aval = aHydrate(VersionN(3)) // should also fail for aHydrateLatest()
     dCalc(aHydrate(VersionN(3)), bCalc(aval), cCalc(aval))
   }
 
   //===================================================================================================================
   // Chapter 2: state management and accumulation
+
+  /**
+    * Starting with the base case: we want to keep info between pipeline steps so we can inspect it at
+    *   the end for diagnostic purposes, but we want to be uncluttered and inaccessible.
+    *   Consider if all we had to log was simple messages:
+    */
+  object WritingDiagsSinglePipe {
+    import cats.data.Writer
+    import cats.instances.vector._
+    import cats.syntax.applicative._
+    import cats.syntax.writer._
+    import cats.syntax.all._
+
+    type Logged[T] = Writer[Seq[String], T]
+    val alog: Logged[Aout] = Writer(Seq("A"), new Aout{})
+    val blog: Logged[Bout] = Writer(Seq("B"), new Bout{})
+    val clog: Logged[Cout] = Writer(Seq("C"), new Cout{})
+
+    val cresult = for {
+      a <- alog
+//      _ <- Seq("In between computing A and B!").tell
+//      b <- alog
+//      c <- clog
+    } yield a
+  }
 
 }
