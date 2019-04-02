@@ -1,29 +1,66 @@
 package calcs
 
+//import scala.reflect.ClassTag
 import scala.util.Try
+import scala.reflect.runtime.universe._
+
 
 
 object Verbose22Imports
   extends Verbose22
-    with Generated22
 
-object Verbose22Demo {
-  import Verbose22Imports._
+
+object GenerateText extends App {
+
+  // Generator
+
+  (1 to 22).foreach{ i =>
+
+    val typeParamsVarientWithTypeTags = (1 to i).map(x => s"-T$x : TypeTag").mkString(", ") + ", +R"
+    val typeParamsVariant = (1 to i).map(x => s"-T$x").mkString(", ") + ", +R"
+    val typeParmsTuple = (1 to i).map(x => s"T$x").mkString(", ")
+
+    val aggParams = (1 to i).map(x => s"v$x: CalcVersionAssigned").mkString(", ") + ", r: UnversionedData[R]"
+    val agg = s"case class Agg$i[$typeParamsVarientWithTypeTags]($aggParams) extends Agg[R]"
+    val logInputsInner = (1 to i).map(x => s"calcRepository.logInput(InputRecord[T$x](calcVersion = calcVersionAssigned, inputCalc = this.v$x))").mkString("\n\t\t")
+    val aggInner = s"{\n\tprotected def logInputs(calcVersionAssigned: CalcVersionAssigned)(implicit calcRepository: CalcRepository): Try[Unit] = {\n\t\t$logInputsInner \n\t}\n}"
+
+
+    val calcVersions = (1 to i).map(x => s"\t\t\tv$x.version,\n").mkString("")
+    val unverisoned = (1 to i).map(x => s"v$x.data").mkString(", ")
+    val versionedDataInputs = (1 to i).map(x => s"v$x: VersionedData[T$x]").mkString(", ")
+    val versionedDataTypeParams = (1 to i).map(x => s"VersionedData[T$x]").mkString(", ")
+    val fBody = s"\n\t\tAgg$i(\n$calcVersions\t\t\tUnversionedData(f($unverisoned), CalcUnversioned(this.name))\n\t\t)\n"
+
+    val calc = s"trait Calc$i[$typeParamsVariant] extends Function$i[$versionedDataTypeParams, Agg$i[$typeParmsTuple, R]] with Calc[R] {"
+    val calc2 = s"\tdef f: ($typeParmsTuple) => R\n\tdef apply($versionedDataInputs): Agg$i[$typeParmsTuple, R] = {$fBody\t}"
+
+    println(agg)
+    println(aggInner)
+    println(calc)
+    println(calc2)
+    println("\n}\n")
+  }
 }
-
 
 /**
   * Initial design - have a Calc for each Function1-22
   */
 trait Verbose22 {
 
+  // TODO(nick.bradford) probably a lot of these need typetags?
+
   /**
     * Just a single Try for now; in the future will wrap in Future or IO.
     */
   trait HasRepository[T]{
-    def persist(t: T): Try[CalcVersionAssigned]
+    def persist(t: VersionedDataUnpersisted[T]): Try[Unit]
     def hydrate(version: CalcVersionAssigned): Try[T]
-    def hydrateLatestValid(): Try[T]
+    def hydrateLatestValid(): Try[VersionedData[T]]
+  }
+
+  object HasRepository {
+    def apply[T](implicit ev: HasRepository[T]): HasRepository[T] = ev
   }
 
   /**
@@ -43,7 +80,7 @@ trait Verbose22 {
 //  trait DataWithVersion
   case class VersionedData[+T](data: T, version: CalcVersionAssigned)// extends DataWithVersion
   case class UnversionedData[+T](data: T, version: CalcUnversioned)// extends DataWithVersion
-
+  case class VersionedDataUnpersisted[+T](data: T, version: CalcVersionAssigned)
 
   /**
     * Metadata records:
@@ -57,8 +94,8 @@ trait Verbose22 {
 
   trait CalcRepository {
     def requisitionNewRunId(calcName: String): Try[CalcVersionAssigned]
-    def logInput[T](inputRecord: InputRecord[T]): Try[Unit]
-    def logOutput[T](outputRecord: OutputRecord[T]): Try[Unit]
+    def logInput[T : TypeTag](inputRecord: InputRecord[T]): Try[Unit]
+    def logOutput[T : TypeTag](outputRecord: OutputRecord[T]): Try[Unit]
     //    def logEquivalence[T](hierarchyRecord: HierarchyRecord[T]): Unit
   }
 
@@ -78,18 +115,19 @@ trait Verbose22 {
       */
     final def persistAndReturn[R](agg: Agg[R])
                                  (implicit ev: HasRepository[R],
-                                  calcRepository: CalcRepository): Try[CalcVersionAssigned] = {
+                                  calcRepository: CalcRepository): Try[VersionedData[R]] = {
       for {
         newCalcId <- calcRepository.requisitionNewRunId(agg.source.calcName)
         _ <- agg.logInputs(newCalcId)
-        version <- ev.persist(agg.r.data)
-      } yield version
+        newlyVersionedData = VersionedDataUnpersisted(data = agg.r.data, version = newCalcId)
+        _ <- ev.persist(newlyVersionedData)
+      } yield VersionedData[R](newlyVersionedData.data, newlyVersionedData.version)
     }
   }
 
   sealed trait Calc[+R]{
     def name: String
-    def agg: Agg[R]
+//    def agg: Agg[R]
 
     /**
       * Could use Typetags to also get the type params.
@@ -98,52 +136,29 @@ trait Verbose22 {
   }
   object Calc{
     // TODO has apply methods for all the intermediate calcs
+    def apply[T1, R](minorName: String, func: (T1) => R) = new Calc1[T1, R]{
+      override def f: (T1) => R = func
+      override def name: String = minorName
+    }
+
+    def apply[T1, T2, R](minorName: String, func: (T1, T2) => R) = new Calc2[T1, T2, R]{
+      override def f: (T1, T2) => R = func
+      override def name: String = minorName
+    }
   }
 
 
-}
+  //==============================================================================================================
+  // STOP this is generated code
+  //==============================================================================================================
 
-object GenerateText extends App {
-
-  // Generator
-
-  (1 to 22).foreach{ i =>
-
-    val typeParamsVariant = (1 to i).map(x => s"-T$x").mkString(", ") + ", +R"
-    val typeParmsTuple = (1 to i).map(x => s"T$x").mkString(", ")
-
-    val aggParams = (1 to i).map(x => s"v$x: CalcVersionAssigned").mkString(", ") + ", r: UnversionedData[R]"
-    val agg = s"case class Agg$i[$typeParamsVariant]($aggParams) extends Agg[R]"
-    val logInputsInner = (1 to i).map(x => s"calcRepository.logInput(InputRecord[T$x](calcVersion = calcVersionAssigned, inputCalc = this.v$x))").mkString("\n\t\t")
-    val aggInner = s"{\n\tprotected def logInputs(calcVersionAssigned: CalcVersionAssigned)(implicit calcRepository: CalcRepository): Try[Unit] = {\n\t\t$logInputsInner \n\t}\n}"
-
-
-    val calcVersions = (1 to i).map(x => s"\t\t\tv$x.version,\n").mkString("")
-    val unverisoned = (1 to i).map(x => s"v$x.data").mkString(", ")
-    val versionedDataInputs = (1 to i).map(x => s"v$x: VersionedData[T$x]").mkString(", ")
-    val fBody = s"\n\t\tAgg$i(\n$calcVersions\t\t\tUnversionedData(f($unverisoned), CalcUnversioned(this.name))\n\t\t)\n"
-    val calc = s"trait Calc$i[$typeParamsVariant] extends Function$i[$typeParmsTuple, R] with Calc[R] {"
-    val calc2 = s"\tdef f: ($typeParmsTuple) => R\n\tdef apply($versionedDataInputs): Agg$i[$typeParmsTuple, R] = {$fBody\t}"
-
-    println(agg)
-    println(aggInner)
-    println(calc)
-    println(calc2)
-    println("\n}\n")
-  }
-}
-
-trait Generated22 {
-
-  import Verbose22._
-
-  case class Agg1[-T1, +R](v1: CalcVersionAssigned, r: UnversionedData[R]) extends Agg[R]
+  case class Agg1[-T1 : TypeTag, +R](v1: CalcVersionAssigned, r: UnversionedData[R]) extends Agg[R]
   {
     protected def logInputs(calcVersionAssigned: CalcVersionAssigned)(implicit calcRepository: CalcRepository): Try[Unit] = {
       calcRepository.logInput(InputRecord[T1](calcVersion = calcVersionAssigned, inputCalc = this.v1))
     }
   }
-  trait Calc1[-T1, +R] extends Function1[T1, R] with Calc[R] {
+  trait Calc1[-T1, +R] extends Function1[VersionedData[T1], Agg1[T1, R]] with Calc[R] {
     def f: (T1) => R
     def apply(v1: VersionedData[T1]): Agg1[T1, R] = {
       Agg1(
@@ -154,14 +169,14 @@ trait Generated22 {
 
   }
 
-  case class Agg2[-T1, -T2, +R](v1: CalcVersionAssigned, v2: CalcVersionAssigned, r: UnversionedData[R]) extends Agg[R]
+  case class Agg2[-T1 : TypeTag, -T2 : TypeTag, +R](v1: CalcVersionAssigned, v2: CalcVersionAssigned, r: UnversionedData[R]) extends Agg[R]
   {
     protected def logInputs(calcVersionAssigned: CalcVersionAssigned)(implicit calcRepository: CalcRepository): Try[Unit] = {
       calcRepository.logInput(InputRecord[T1](calcVersion = calcVersionAssigned, inputCalc = this.v1))
       calcRepository.logInput(InputRecord[T2](calcVersion = calcVersionAssigned, inputCalc = this.v2))
     }
   }
-  trait Calc2[-T1, -T2, +R] extends Function2[T1, T2, R] with Calc[R] {
+  trait Calc2[-T1, -T2, +R] extends Function2[VersionedData[T1], VersionedData[T2], Agg2[T1, T2, R]] with Calc[R] {
     def f: (T1, T2) => R
     def apply(v1: VersionedData[T1], v2: VersionedData[T2]): Agg2[T1, T2, R] = {
       Agg2(
@@ -173,7 +188,7 @@ trait Generated22 {
 
   }
 
-  case class Agg3[-T1, -T2, -T3, +R](v1: CalcVersionAssigned, v2: CalcVersionAssigned, v3: CalcVersionAssigned, r: UnversionedData[R]) extends Agg[R]
+  case class Agg3[-T1 : TypeTag, -T2 : TypeTag, -T3 : TypeTag, +R](v1: CalcVersionAssigned, v2: CalcVersionAssigned, v3: CalcVersionAssigned, r: UnversionedData[R]) extends Agg[R]
   {
     protected def logInputs(calcVersionAssigned: CalcVersionAssigned)(implicit calcRepository: CalcRepository): Try[Unit] = {
       calcRepository.logInput(InputRecord[T1](calcVersion = calcVersionAssigned, inputCalc = this.v1))
@@ -181,7 +196,7 @@ trait Generated22 {
       calcRepository.logInput(InputRecord[T3](calcVersion = calcVersionAssigned, inputCalc = this.v3))
     }
   }
-  trait Calc3[-T1, -T2, -T3, +R] extends Function3[T1, T2, T3, R] with Calc[R] {
+  trait Calc3[-T1, -T2, -T3, +R] extends Function3[VersionedData[T1], VersionedData[T2], VersionedData[T3], Agg3[T1, T2, T3, R]] with Calc[R] {
     def f: (T1, T2, T3) => R
     def apply(v1: VersionedData[T1], v2: VersionedData[T2], v3: VersionedData[T3]): Agg3[T1, T2, T3, R] = {
       Agg3(
@@ -194,7 +209,7 @@ trait Generated22 {
 
   }
 
-  case class Agg4[-T1, -T2, -T3, -T4, +R](v1: CalcVersionAssigned, v2: CalcVersionAssigned, v3: CalcVersionAssigned, v4: CalcVersionAssigned, r: UnversionedData[R]) extends Agg[R]
+  case class Agg4[-T1 : TypeTag, -T2 : TypeTag, -T3 : TypeTag, -T4 : TypeTag, +R](v1: CalcVersionAssigned, v2: CalcVersionAssigned, v3: CalcVersionAssigned, v4: CalcVersionAssigned, r: UnversionedData[R]) extends Agg[R]
   {
     protected def logInputs(calcVersionAssigned: CalcVersionAssigned)(implicit calcRepository: CalcRepository): Try[Unit] = {
       calcRepository.logInput(InputRecord[T1](calcVersion = calcVersionAssigned, inputCalc = this.v1))
@@ -203,7 +218,7 @@ trait Generated22 {
       calcRepository.logInput(InputRecord[T4](calcVersion = calcVersionAssigned, inputCalc = this.v4))
     }
   }
-  trait Calc4[-T1, -T2, -T3, -T4, +R] extends Function4[T1, T2, T3, T4, R] with Calc[R] {
+  trait Calc4[-T1, -T2, -T3, -T4, +R] extends Function4[VersionedData[T1], VersionedData[T2], VersionedData[T3], VersionedData[T4], Agg4[T1, T2, T3, T4, R]] with Calc[R] {
     def f: (T1, T2, T3, T4) => R
     def apply(v1: VersionedData[T1], v2: VersionedData[T2], v3: VersionedData[T3], v4: VersionedData[T4]): Agg4[T1, T2, T3, T4, R] = {
       Agg4(
@@ -217,7 +232,7 @@ trait Generated22 {
 
   }
 
-  case class Agg5[-T1, -T2, -T3, -T4, -T5, +R](v1: CalcVersionAssigned, v2: CalcVersionAssigned, v3: CalcVersionAssigned, v4: CalcVersionAssigned, v5: CalcVersionAssigned, r: UnversionedData[R]) extends Agg[R]
+  case class Agg5[-T1 : TypeTag, -T2 : TypeTag, -T3 : TypeTag, -T4 : TypeTag, -T5 : TypeTag, +R](v1: CalcVersionAssigned, v2: CalcVersionAssigned, v3: CalcVersionAssigned, v4: CalcVersionAssigned, v5: CalcVersionAssigned, r: UnversionedData[R]) extends Agg[R]
   {
     protected def logInputs(calcVersionAssigned: CalcVersionAssigned)(implicit calcRepository: CalcRepository): Try[Unit] = {
       calcRepository.logInput(InputRecord[T1](calcVersion = calcVersionAssigned, inputCalc = this.v1))
@@ -227,7 +242,7 @@ trait Generated22 {
       calcRepository.logInput(InputRecord[T5](calcVersion = calcVersionAssigned, inputCalc = this.v5))
     }
   }
-  trait Calc5[-T1, -T2, -T3, -T4, -T5, +R] extends Function5[T1, T2, T3, T4, T5, R] with Calc[R] {
+  trait Calc5[-T1, -T2, -T3, -T4, -T5, +R] extends Function5[VersionedData[T1], VersionedData[T2], VersionedData[T3], VersionedData[T4], VersionedData[T5], Agg5[T1, T2, T3, T4, T5, R]] with Calc[R] {
     def f: (T1, T2, T3, T4, T5) => R
     def apply(v1: VersionedData[T1], v2: VersionedData[T2], v3: VersionedData[T3], v4: VersionedData[T4], v5: VersionedData[T5]): Agg5[T1, T2, T3, T4, T5, R] = {
       Agg5(
@@ -242,7 +257,7 @@ trait Generated22 {
 
   }
 
-  case class Agg6[-T1, -T2, -T3, -T4, -T5, -T6, +R](v1: CalcVersionAssigned, v2: CalcVersionAssigned, v3: CalcVersionAssigned, v4: CalcVersionAssigned, v5: CalcVersionAssigned, v6: CalcVersionAssigned, r: UnversionedData[R]) extends Agg[R]
+  case class Agg6[-T1 : TypeTag, -T2 : TypeTag, -T3 : TypeTag, -T4 : TypeTag, -T5 : TypeTag, -T6 : TypeTag, +R](v1: CalcVersionAssigned, v2: CalcVersionAssigned, v3: CalcVersionAssigned, v4: CalcVersionAssigned, v5: CalcVersionAssigned, v6: CalcVersionAssigned, r: UnversionedData[R]) extends Agg[R]
   {
     protected def logInputs(calcVersionAssigned: CalcVersionAssigned)(implicit calcRepository: CalcRepository): Try[Unit] = {
       calcRepository.logInput(InputRecord[T1](calcVersion = calcVersionAssigned, inputCalc = this.v1))
@@ -253,7 +268,7 @@ trait Generated22 {
       calcRepository.logInput(InputRecord[T6](calcVersion = calcVersionAssigned, inputCalc = this.v6))
     }
   }
-  trait Calc6[-T1, -T2, -T3, -T4, -T5, -T6, +R] extends Function6[T1, T2, T3, T4, T5, T6, R] with Calc[R] {
+  trait Calc6[-T1, -T2, -T3, -T4, -T5, -T6, +R] extends Function6[VersionedData[T1], VersionedData[T2], VersionedData[T3], VersionedData[T4], VersionedData[T5], VersionedData[T6], Agg6[T1, T2, T3, T4, T5, T6, R]] with Calc[R] {
     def f: (T1, T2, T3, T4, T5, T6) => R
     def apply(v1: VersionedData[T1], v2: VersionedData[T2], v3: VersionedData[T3], v4: VersionedData[T4], v5: VersionedData[T5], v6: VersionedData[T6]): Agg6[T1, T2, T3, T4, T5, T6, R] = {
       Agg6(
@@ -269,7 +284,7 @@ trait Generated22 {
 
   }
 
-  case class Agg7[-T1, -T2, -T3, -T4, -T5, -T6, -T7, +R](v1: CalcVersionAssigned, v2: CalcVersionAssigned, v3: CalcVersionAssigned, v4: CalcVersionAssigned, v5: CalcVersionAssigned, v6: CalcVersionAssigned, v7: CalcVersionAssigned, r: UnversionedData[R]) extends Agg[R]
+  case class Agg7[-T1 : TypeTag, -T2 : TypeTag, -T3 : TypeTag, -T4 : TypeTag, -T5 : TypeTag, -T6 : TypeTag, -T7 : TypeTag, +R](v1: CalcVersionAssigned, v2: CalcVersionAssigned, v3: CalcVersionAssigned, v4: CalcVersionAssigned, v5: CalcVersionAssigned, v6: CalcVersionAssigned, v7: CalcVersionAssigned, r: UnversionedData[R]) extends Agg[R]
   {
     protected def logInputs(calcVersionAssigned: CalcVersionAssigned)(implicit calcRepository: CalcRepository): Try[Unit] = {
       calcRepository.logInput(InputRecord[T1](calcVersion = calcVersionAssigned, inputCalc = this.v1))
@@ -281,7 +296,7 @@ trait Generated22 {
       calcRepository.logInput(InputRecord[T7](calcVersion = calcVersionAssigned, inputCalc = this.v7))
     }
   }
-  trait Calc7[-T1, -T2, -T3, -T4, -T5, -T6, -T7, +R] extends Function7[T1, T2, T3, T4, T5, T6, T7, R] with Calc[R] {
+  trait Calc7[-T1, -T2, -T3, -T4, -T5, -T6, -T7, +R] extends Function7[VersionedData[T1], VersionedData[T2], VersionedData[T3], VersionedData[T4], VersionedData[T5], VersionedData[T6], VersionedData[T7], Agg7[T1, T2, T3, T4, T5, T6, T7, R]] with Calc[R] {
     def f: (T1, T2, T3, T4, T5, T6, T7) => R
     def apply(v1: VersionedData[T1], v2: VersionedData[T2], v3: VersionedData[T3], v4: VersionedData[T4], v5: VersionedData[T5], v6: VersionedData[T6], v7: VersionedData[T7]): Agg7[T1, T2, T3, T4, T5, T6, T7, R] = {
       Agg7(
@@ -298,7 +313,7 @@ trait Generated22 {
 
   }
 
-  case class Agg8[-T1, -T2, -T3, -T4, -T5, -T6, -T7, -T8, +R](v1: CalcVersionAssigned, v2: CalcVersionAssigned, v3: CalcVersionAssigned, v4: CalcVersionAssigned, v5: CalcVersionAssigned, v6: CalcVersionAssigned, v7: CalcVersionAssigned, v8: CalcVersionAssigned, r: UnversionedData[R]) extends Agg[R]
+  case class Agg8[-T1 : TypeTag, -T2 : TypeTag, -T3 : TypeTag, -T4 : TypeTag, -T5 : TypeTag, -T6 : TypeTag, -T7 : TypeTag, -T8 : TypeTag, +R](v1: CalcVersionAssigned, v2: CalcVersionAssigned, v3: CalcVersionAssigned, v4: CalcVersionAssigned, v5: CalcVersionAssigned, v6: CalcVersionAssigned, v7: CalcVersionAssigned, v8: CalcVersionAssigned, r: UnversionedData[R]) extends Agg[R]
   {
     protected def logInputs(calcVersionAssigned: CalcVersionAssigned)(implicit calcRepository: CalcRepository): Try[Unit] = {
       calcRepository.logInput(InputRecord[T1](calcVersion = calcVersionAssigned, inputCalc = this.v1))
@@ -311,7 +326,7 @@ trait Generated22 {
       calcRepository.logInput(InputRecord[T8](calcVersion = calcVersionAssigned, inputCalc = this.v8))
     }
   }
-  trait Calc8[-T1, -T2, -T3, -T4, -T5, -T6, -T7, -T8, +R] extends Function8[T1, T2, T3, T4, T5, T6, T7, T8, R] with Calc[R] {
+  trait Calc8[-T1, -T2, -T3, -T4, -T5, -T6, -T7, -T8, +R] extends Function8[VersionedData[T1], VersionedData[T2], VersionedData[T3], VersionedData[T4], VersionedData[T5], VersionedData[T6], VersionedData[T7], VersionedData[T8], Agg8[T1, T2, T3, T4, T5, T6, T7, T8, R]] with Calc[R] {
     def f: (T1, T2, T3, T4, T5, T6, T7, T8) => R
     def apply(v1: VersionedData[T1], v2: VersionedData[T2], v3: VersionedData[T3], v4: VersionedData[T4], v5: VersionedData[T5], v6: VersionedData[T6], v7: VersionedData[T7], v8: VersionedData[T8]): Agg8[T1, T2, T3, T4, T5, T6, T7, T8, R] = {
       Agg8(
@@ -329,7 +344,7 @@ trait Generated22 {
 
   }
 
-  case class Agg9[-T1, -T2, -T3, -T4, -T5, -T6, -T7, -T8, -T9, +R](v1: CalcVersionAssigned, v2: CalcVersionAssigned, v3: CalcVersionAssigned, v4: CalcVersionAssigned, v5: CalcVersionAssigned, v6: CalcVersionAssigned, v7: CalcVersionAssigned, v8: CalcVersionAssigned, v9: CalcVersionAssigned, r: UnversionedData[R]) extends Agg[R]
+  case class Agg9[-T1 : TypeTag, -T2 : TypeTag, -T3 : TypeTag, -T4 : TypeTag, -T5 : TypeTag, -T6 : TypeTag, -T7 : TypeTag, -T8 : TypeTag, -T9 : TypeTag, +R](v1: CalcVersionAssigned, v2: CalcVersionAssigned, v3: CalcVersionAssigned, v4: CalcVersionAssigned, v5: CalcVersionAssigned, v6: CalcVersionAssigned, v7: CalcVersionAssigned, v8: CalcVersionAssigned, v9: CalcVersionAssigned, r: UnversionedData[R]) extends Agg[R]
   {
     protected def logInputs(calcVersionAssigned: CalcVersionAssigned)(implicit calcRepository: CalcRepository): Try[Unit] = {
       calcRepository.logInput(InputRecord[T1](calcVersion = calcVersionAssigned, inputCalc = this.v1))
@@ -343,7 +358,7 @@ trait Generated22 {
       calcRepository.logInput(InputRecord[T9](calcVersion = calcVersionAssigned, inputCalc = this.v9))
     }
   }
-  trait Calc9[-T1, -T2, -T3, -T4, -T5, -T6, -T7, -T8, -T9, +R] extends Function9[T1, T2, T3, T4, T5, T6, T7, T8, T9, R] with Calc[R] {
+  trait Calc9[-T1, -T2, -T3, -T4, -T5, -T6, -T7, -T8, -T9, +R] extends Function9[VersionedData[T1], VersionedData[T2], VersionedData[T3], VersionedData[T4], VersionedData[T5], VersionedData[T6], VersionedData[T7], VersionedData[T8], VersionedData[T9], Agg9[T1, T2, T3, T4, T5, T6, T7, T8, T9, R]] with Calc[R] {
     def f: (T1, T2, T3, T4, T5, T6, T7, T8, T9) => R
     def apply(v1: VersionedData[T1], v2: VersionedData[T2], v3: VersionedData[T3], v4: VersionedData[T4], v5: VersionedData[T5], v6: VersionedData[T6], v7: VersionedData[T7], v8: VersionedData[T8], v9: VersionedData[T9]): Agg9[T1, T2, T3, T4, T5, T6, T7, T8, T9, R] = {
       Agg9(
@@ -362,7 +377,7 @@ trait Generated22 {
 
   }
 
-  case class Agg10[-T1, -T2, -T3, -T4, -T5, -T6, -T7, -T8, -T9, -T10, +R](v1: CalcVersionAssigned, v2: CalcVersionAssigned, v3: CalcVersionAssigned, v4: CalcVersionAssigned, v5: CalcVersionAssigned, v6: CalcVersionAssigned, v7: CalcVersionAssigned, v8: CalcVersionAssigned, v9: CalcVersionAssigned, v10: CalcVersionAssigned, r: UnversionedData[R]) extends Agg[R]
+  case class Agg10[-T1 : TypeTag, -T2 : TypeTag, -T3 : TypeTag, -T4 : TypeTag, -T5 : TypeTag, -T6 : TypeTag, -T7 : TypeTag, -T8 : TypeTag, -T9 : TypeTag, -T10 : TypeTag, +R](v1: CalcVersionAssigned, v2: CalcVersionAssigned, v3: CalcVersionAssigned, v4: CalcVersionAssigned, v5: CalcVersionAssigned, v6: CalcVersionAssigned, v7: CalcVersionAssigned, v8: CalcVersionAssigned, v9: CalcVersionAssigned, v10: CalcVersionAssigned, r: UnversionedData[R]) extends Agg[R]
   {
     protected def logInputs(calcVersionAssigned: CalcVersionAssigned)(implicit calcRepository: CalcRepository): Try[Unit] = {
       calcRepository.logInput(InputRecord[T1](calcVersion = calcVersionAssigned, inputCalc = this.v1))
@@ -377,7 +392,7 @@ trait Generated22 {
       calcRepository.logInput(InputRecord[T10](calcVersion = calcVersionAssigned, inputCalc = this.v10))
     }
   }
-  trait Calc10[-T1, -T2, -T3, -T4, -T5, -T6, -T7, -T8, -T9, -T10, +R] extends Function10[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, R] with Calc[R] {
+  trait Calc10[-T1, -T2, -T3, -T4, -T5, -T6, -T7, -T8, -T9, -T10, +R] extends Function10[VersionedData[T1], VersionedData[T2], VersionedData[T3], VersionedData[T4], VersionedData[T5], VersionedData[T6], VersionedData[T7], VersionedData[T8], VersionedData[T9], VersionedData[T10], Agg10[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, R]] with Calc[R] {
     def f: (T1, T2, T3, T4, T5, T6, T7, T8, T9, T10) => R
     def apply(v1: VersionedData[T1], v2: VersionedData[T2], v3: VersionedData[T3], v4: VersionedData[T4], v5: VersionedData[T5], v6: VersionedData[T6], v7: VersionedData[T7], v8: VersionedData[T8], v9: VersionedData[T9], v10: VersionedData[T10]): Agg10[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, R] = {
       Agg10(
@@ -397,7 +412,7 @@ trait Generated22 {
 
   }
 
-  case class Agg11[-T1, -T2, -T3, -T4, -T5, -T6, -T7, -T8, -T9, -T10, -T11, +R](v1: CalcVersionAssigned, v2: CalcVersionAssigned, v3: CalcVersionAssigned, v4: CalcVersionAssigned, v5: CalcVersionAssigned, v6: CalcVersionAssigned, v7: CalcVersionAssigned, v8: CalcVersionAssigned, v9: CalcVersionAssigned, v10: CalcVersionAssigned, v11: CalcVersionAssigned, r: UnversionedData[R]) extends Agg[R]
+  case class Agg11[-T1 : TypeTag, -T2 : TypeTag, -T3 : TypeTag, -T4 : TypeTag, -T5 : TypeTag, -T6 : TypeTag, -T7 : TypeTag, -T8 : TypeTag, -T9 : TypeTag, -T10 : TypeTag, -T11 : TypeTag, +R](v1: CalcVersionAssigned, v2: CalcVersionAssigned, v3: CalcVersionAssigned, v4: CalcVersionAssigned, v5: CalcVersionAssigned, v6: CalcVersionAssigned, v7: CalcVersionAssigned, v8: CalcVersionAssigned, v9: CalcVersionAssigned, v10: CalcVersionAssigned, v11: CalcVersionAssigned, r: UnversionedData[R]) extends Agg[R]
   {
     protected def logInputs(calcVersionAssigned: CalcVersionAssigned)(implicit calcRepository: CalcRepository): Try[Unit] = {
       calcRepository.logInput(InputRecord[T1](calcVersion = calcVersionAssigned, inputCalc = this.v1))
@@ -413,7 +428,7 @@ trait Generated22 {
       calcRepository.logInput(InputRecord[T11](calcVersion = calcVersionAssigned, inputCalc = this.v11))
     }
   }
-  trait Calc11[-T1, -T2, -T3, -T4, -T5, -T6, -T7, -T8, -T9, -T10, -T11, +R] extends Function11[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, R] with Calc[R] {
+  trait Calc11[-T1, -T2, -T3, -T4, -T5, -T6, -T7, -T8, -T9, -T10, -T11, +R] extends Function11[VersionedData[T1], VersionedData[T2], VersionedData[T3], VersionedData[T4], VersionedData[T5], VersionedData[T6], VersionedData[T7], VersionedData[T8], VersionedData[T9], VersionedData[T10], VersionedData[T11], Agg11[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, R]] with Calc[R] {
     def f: (T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11) => R
     def apply(v1: VersionedData[T1], v2: VersionedData[T2], v3: VersionedData[T3], v4: VersionedData[T4], v5: VersionedData[T5], v6: VersionedData[T6], v7: VersionedData[T7], v8: VersionedData[T8], v9: VersionedData[T9], v10: VersionedData[T10], v11: VersionedData[T11]): Agg11[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, R] = {
       Agg11(
@@ -434,7 +449,7 @@ trait Generated22 {
 
   }
 
-  case class Agg12[-T1, -T2, -T3, -T4, -T5, -T6, -T7, -T8, -T9, -T10, -T11, -T12, +R](v1: CalcVersionAssigned, v2: CalcVersionAssigned, v3: CalcVersionAssigned, v4: CalcVersionAssigned, v5: CalcVersionAssigned, v6: CalcVersionAssigned, v7: CalcVersionAssigned, v8: CalcVersionAssigned, v9: CalcVersionAssigned, v10: CalcVersionAssigned, v11: CalcVersionAssigned, v12: CalcVersionAssigned, r: UnversionedData[R]) extends Agg[R]
+  case class Agg12[-T1 : TypeTag, -T2 : TypeTag, -T3 : TypeTag, -T4 : TypeTag, -T5 : TypeTag, -T6 : TypeTag, -T7 : TypeTag, -T8 : TypeTag, -T9 : TypeTag, -T10 : TypeTag, -T11 : TypeTag, -T12 : TypeTag, +R](v1: CalcVersionAssigned, v2: CalcVersionAssigned, v3: CalcVersionAssigned, v4: CalcVersionAssigned, v5: CalcVersionAssigned, v6: CalcVersionAssigned, v7: CalcVersionAssigned, v8: CalcVersionAssigned, v9: CalcVersionAssigned, v10: CalcVersionAssigned, v11: CalcVersionAssigned, v12: CalcVersionAssigned, r: UnversionedData[R]) extends Agg[R]
   {
     protected def logInputs(calcVersionAssigned: CalcVersionAssigned)(implicit calcRepository: CalcRepository): Try[Unit] = {
       calcRepository.logInput(InputRecord[T1](calcVersion = calcVersionAssigned, inputCalc = this.v1))
@@ -451,7 +466,7 @@ trait Generated22 {
       calcRepository.logInput(InputRecord[T12](calcVersion = calcVersionAssigned, inputCalc = this.v12))
     }
   }
-  trait Calc12[-T1, -T2, -T3, -T4, -T5, -T6, -T7, -T8, -T9, -T10, -T11, -T12, +R] extends Function12[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, R] with Calc[R] {
+  trait Calc12[-T1, -T2, -T3, -T4, -T5, -T6, -T7, -T8, -T9, -T10, -T11, -T12, +R] extends Function12[VersionedData[T1], VersionedData[T2], VersionedData[T3], VersionedData[T4], VersionedData[T5], VersionedData[T6], VersionedData[T7], VersionedData[T8], VersionedData[T9], VersionedData[T10], VersionedData[T11], VersionedData[T12], Agg12[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, R]] with Calc[R] {
     def f: (T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12) => R
     def apply(v1: VersionedData[T1], v2: VersionedData[T2], v3: VersionedData[T3], v4: VersionedData[T4], v5: VersionedData[T5], v6: VersionedData[T6], v7: VersionedData[T7], v8: VersionedData[T8], v9: VersionedData[T9], v10: VersionedData[T10], v11: VersionedData[T11], v12: VersionedData[T12]): Agg12[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, R] = {
       Agg12(
@@ -473,7 +488,7 @@ trait Generated22 {
 
   }
 
-  case class Agg13[-T1, -T2, -T3, -T4, -T5, -T6, -T7, -T8, -T9, -T10, -T11, -T12, -T13, +R](v1: CalcVersionAssigned, v2: CalcVersionAssigned, v3: CalcVersionAssigned, v4: CalcVersionAssigned, v5: CalcVersionAssigned, v6: CalcVersionAssigned, v7: CalcVersionAssigned, v8: CalcVersionAssigned, v9: CalcVersionAssigned, v10: CalcVersionAssigned, v11: CalcVersionAssigned, v12: CalcVersionAssigned, v13: CalcVersionAssigned, r: UnversionedData[R]) extends Agg[R]
+  case class Agg13[-T1 : TypeTag, -T2 : TypeTag, -T3 : TypeTag, -T4 : TypeTag, -T5 : TypeTag, -T6 : TypeTag, -T7 : TypeTag, -T8 : TypeTag, -T9 : TypeTag, -T10 : TypeTag, -T11 : TypeTag, -T12 : TypeTag, -T13 : TypeTag, +R](v1: CalcVersionAssigned, v2: CalcVersionAssigned, v3: CalcVersionAssigned, v4: CalcVersionAssigned, v5: CalcVersionAssigned, v6: CalcVersionAssigned, v7: CalcVersionAssigned, v8: CalcVersionAssigned, v9: CalcVersionAssigned, v10: CalcVersionAssigned, v11: CalcVersionAssigned, v12: CalcVersionAssigned, v13: CalcVersionAssigned, r: UnversionedData[R]) extends Agg[R]
   {
     protected def logInputs(calcVersionAssigned: CalcVersionAssigned)(implicit calcRepository: CalcRepository): Try[Unit] = {
       calcRepository.logInput(InputRecord[T1](calcVersion = calcVersionAssigned, inputCalc = this.v1))
@@ -491,7 +506,7 @@ trait Generated22 {
       calcRepository.logInput(InputRecord[T13](calcVersion = calcVersionAssigned, inputCalc = this.v13))
     }
   }
-  trait Calc13[-T1, -T2, -T3, -T4, -T5, -T6, -T7, -T8, -T9, -T10, -T11, -T12, -T13, +R] extends Function13[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, R] with Calc[R] {
+  trait Calc13[-T1, -T2, -T3, -T4, -T5, -T6, -T7, -T8, -T9, -T10, -T11, -T12, -T13, +R] extends Function13[VersionedData[T1], VersionedData[T2], VersionedData[T3], VersionedData[T4], VersionedData[T5], VersionedData[T6], VersionedData[T7], VersionedData[T8], VersionedData[T9], VersionedData[T10], VersionedData[T11], VersionedData[T12], VersionedData[T13], Agg13[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, R]] with Calc[R] {
     def f: (T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13) => R
     def apply(v1: VersionedData[T1], v2: VersionedData[T2], v3: VersionedData[T3], v4: VersionedData[T4], v5: VersionedData[T5], v6: VersionedData[T6], v7: VersionedData[T7], v8: VersionedData[T8], v9: VersionedData[T9], v10: VersionedData[T10], v11: VersionedData[T11], v12: VersionedData[T12], v13: VersionedData[T13]): Agg13[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, R] = {
       Agg13(
@@ -514,7 +529,7 @@ trait Generated22 {
 
   }
 
-  case class Agg14[-T1, -T2, -T3, -T4, -T5, -T6, -T7, -T8, -T9, -T10, -T11, -T12, -T13, -T14, +R](v1: CalcVersionAssigned, v2: CalcVersionAssigned, v3: CalcVersionAssigned, v4: CalcVersionAssigned, v5: CalcVersionAssigned, v6: CalcVersionAssigned, v7: CalcVersionAssigned, v8: CalcVersionAssigned, v9: CalcVersionAssigned, v10: CalcVersionAssigned, v11: CalcVersionAssigned, v12: CalcVersionAssigned, v13: CalcVersionAssigned, v14: CalcVersionAssigned, r: UnversionedData[R]) extends Agg[R]
+  case class Agg14[-T1 : TypeTag, -T2 : TypeTag, -T3 : TypeTag, -T4 : TypeTag, -T5 : TypeTag, -T6 : TypeTag, -T7 : TypeTag, -T8 : TypeTag, -T9 : TypeTag, -T10 : TypeTag, -T11 : TypeTag, -T12 : TypeTag, -T13 : TypeTag, -T14 : TypeTag, +R](v1: CalcVersionAssigned, v2: CalcVersionAssigned, v3: CalcVersionAssigned, v4: CalcVersionAssigned, v5: CalcVersionAssigned, v6: CalcVersionAssigned, v7: CalcVersionAssigned, v8: CalcVersionAssigned, v9: CalcVersionAssigned, v10: CalcVersionAssigned, v11: CalcVersionAssigned, v12: CalcVersionAssigned, v13: CalcVersionAssigned, v14: CalcVersionAssigned, r: UnversionedData[R]) extends Agg[R]
   {
     protected def logInputs(calcVersionAssigned: CalcVersionAssigned)(implicit calcRepository: CalcRepository): Try[Unit] = {
       calcRepository.logInput(InputRecord[T1](calcVersion = calcVersionAssigned, inputCalc = this.v1))
@@ -533,7 +548,7 @@ trait Generated22 {
       calcRepository.logInput(InputRecord[T14](calcVersion = calcVersionAssigned, inputCalc = this.v14))
     }
   }
-  trait Calc14[-T1, -T2, -T3, -T4, -T5, -T6, -T7, -T8, -T9, -T10, -T11, -T12, -T13, -T14, +R] extends Function14[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, R] with Calc[R] {
+  trait Calc14[-T1, -T2, -T3, -T4, -T5, -T6, -T7, -T8, -T9, -T10, -T11, -T12, -T13, -T14, +R] extends Function14[VersionedData[T1], VersionedData[T2], VersionedData[T3], VersionedData[T4], VersionedData[T5], VersionedData[T6], VersionedData[T7], VersionedData[T8], VersionedData[T9], VersionedData[T10], VersionedData[T11], VersionedData[T12], VersionedData[T13], VersionedData[T14], Agg14[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, R]] with Calc[R] {
     def f: (T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14) => R
     def apply(v1: VersionedData[T1], v2: VersionedData[T2], v3: VersionedData[T3], v4: VersionedData[T4], v5: VersionedData[T5], v6: VersionedData[T6], v7: VersionedData[T7], v8: VersionedData[T8], v9: VersionedData[T9], v10: VersionedData[T10], v11: VersionedData[T11], v12: VersionedData[T12], v13: VersionedData[T13], v14: VersionedData[T14]): Agg14[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, R] = {
       Agg14(
@@ -557,7 +572,7 @@ trait Generated22 {
 
   }
 
-  case class Agg15[-T1, -T2, -T3, -T4, -T5, -T6, -T7, -T8, -T9, -T10, -T11, -T12, -T13, -T14, -T15, +R](v1: CalcVersionAssigned, v2: CalcVersionAssigned, v3: CalcVersionAssigned, v4: CalcVersionAssigned, v5: CalcVersionAssigned, v6: CalcVersionAssigned, v7: CalcVersionAssigned, v8: CalcVersionAssigned, v9: CalcVersionAssigned, v10: CalcVersionAssigned, v11: CalcVersionAssigned, v12: CalcVersionAssigned, v13: CalcVersionAssigned, v14: CalcVersionAssigned, v15: CalcVersionAssigned, r: UnversionedData[R]) extends Agg[R]
+  case class Agg15[-T1 : TypeTag, -T2 : TypeTag, -T3 : TypeTag, -T4 : TypeTag, -T5 : TypeTag, -T6 : TypeTag, -T7 : TypeTag, -T8 : TypeTag, -T9 : TypeTag, -T10 : TypeTag, -T11 : TypeTag, -T12 : TypeTag, -T13 : TypeTag, -T14 : TypeTag, -T15 : TypeTag, +R](v1: CalcVersionAssigned, v2: CalcVersionAssigned, v3: CalcVersionAssigned, v4: CalcVersionAssigned, v5: CalcVersionAssigned, v6: CalcVersionAssigned, v7: CalcVersionAssigned, v8: CalcVersionAssigned, v9: CalcVersionAssigned, v10: CalcVersionAssigned, v11: CalcVersionAssigned, v12: CalcVersionAssigned, v13: CalcVersionAssigned, v14: CalcVersionAssigned, v15: CalcVersionAssigned, r: UnversionedData[R]) extends Agg[R]
   {
     protected def logInputs(calcVersionAssigned: CalcVersionAssigned)(implicit calcRepository: CalcRepository): Try[Unit] = {
       calcRepository.logInput(InputRecord[T1](calcVersion = calcVersionAssigned, inputCalc = this.v1))
@@ -577,7 +592,7 @@ trait Generated22 {
       calcRepository.logInput(InputRecord[T15](calcVersion = calcVersionAssigned, inputCalc = this.v15))
     }
   }
-  trait Calc15[-T1, -T2, -T3, -T4, -T5, -T6, -T7, -T8, -T9, -T10, -T11, -T12, -T13, -T14, -T15, +R] extends Function15[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, R] with Calc[R] {
+  trait Calc15[-T1, -T2, -T3, -T4, -T5, -T6, -T7, -T8, -T9, -T10, -T11, -T12, -T13, -T14, -T15, +R] extends Function15[VersionedData[T1], VersionedData[T2], VersionedData[T3], VersionedData[T4], VersionedData[T5], VersionedData[T6], VersionedData[T7], VersionedData[T8], VersionedData[T9], VersionedData[T10], VersionedData[T11], VersionedData[T12], VersionedData[T13], VersionedData[T14], VersionedData[T15], Agg15[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, R]] with Calc[R] {
     def f: (T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15) => R
     def apply(v1: VersionedData[T1], v2: VersionedData[T2], v3: VersionedData[T3], v4: VersionedData[T4], v5: VersionedData[T5], v6: VersionedData[T6], v7: VersionedData[T7], v8: VersionedData[T8], v9: VersionedData[T9], v10: VersionedData[T10], v11: VersionedData[T11], v12: VersionedData[T12], v13: VersionedData[T13], v14: VersionedData[T14], v15: VersionedData[T15]): Agg15[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, R] = {
       Agg15(
@@ -602,7 +617,7 @@ trait Generated22 {
 
   }
 
-  case class Agg16[-T1, -T2, -T3, -T4, -T5, -T6, -T7, -T8, -T9, -T10, -T11, -T12, -T13, -T14, -T15, -T16, +R](v1: CalcVersionAssigned, v2: CalcVersionAssigned, v3: CalcVersionAssigned, v4: CalcVersionAssigned, v5: CalcVersionAssigned, v6: CalcVersionAssigned, v7: CalcVersionAssigned, v8: CalcVersionAssigned, v9: CalcVersionAssigned, v10: CalcVersionAssigned, v11: CalcVersionAssigned, v12: CalcVersionAssigned, v13: CalcVersionAssigned, v14: CalcVersionAssigned, v15: CalcVersionAssigned, v16: CalcVersionAssigned, r: UnversionedData[R]) extends Agg[R]
+  case class Agg16[-T1 : TypeTag, -T2 : TypeTag, -T3 : TypeTag, -T4 : TypeTag, -T5 : TypeTag, -T6 : TypeTag, -T7 : TypeTag, -T8 : TypeTag, -T9 : TypeTag, -T10 : TypeTag, -T11 : TypeTag, -T12 : TypeTag, -T13 : TypeTag, -T14 : TypeTag, -T15 : TypeTag, -T16 : TypeTag, +R](v1: CalcVersionAssigned, v2: CalcVersionAssigned, v3: CalcVersionAssigned, v4: CalcVersionAssigned, v5: CalcVersionAssigned, v6: CalcVersionAssigned, v7: CalcVersionAssigned, v8: CalcVersionAssigned, v9: CalcVersionAssigned, v10: CalcVersionAssigned, v11: CalcVersionAssigned, v12: CalcVersionAssigned, v13: CalcVersionAssigned, v14: CalcVersionAssigned, v15: CalcVersionAssigned, v16: CalcVersionAssigned, r: UnversionedData[R]) extends Agg[R]
   {
     protected def logInputs(calcVersionAssigned: CalcVersionAssigned)(implicit calcRepository: CalcRepository): Try[Unit] = {
       calcRepository.logInput(InputRecord[T1](calcVersion = calcVersionAssigned, inputCalc = this.v1))
@@ -623,7 +638,7 @@ trait Generated22 {
       calcRepository.logInput(InputRecord[T16](calcVersion = calcVersionAssigned, inputCalc = this.v16))
     }
   }
-  trait Calc16[-T1, -T2, -T3, -T4, -T5, -T6, -T7, -T8, -T9, -T10, -T11, -T12, -T13, -T14, -T15, -T16, +R] extends Function16[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, R] with Calc[R] {
+  trait Calc16[-T1, -T2, -T3, -T4, -T5, -T6, -T7, -T8, -T9, -T10, -T11, -T12, -T13, -T14, -T15, -T16, +R] extends Function16[VersionedData[T1], VersionedData[T2], VersionedData[T3], VersionedData[T4], VersionedData[T5], VersionedData[T6], VersionedData[T7], VersionedData[T8], VersionedData[T9], VersionedData[T10], VersionedData[T11], VersionedData[T12], VersionedData[T13], VersionedData[T14], VersionedData[T15], VersionedData[T16], Agg16[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, R]] with Calc[R] {
     def f: (T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16) => R
     def apply(v1: VersionedData[T1], v2: VersionedData[T2], v3: VersionedData[T3], v4: VersionedData[T4], v5: VersionedData[T5], v6: VersionedData[T6], v7: VersionedData[T7], v8: VersionedData[T8], v9: VersionedData[T9], v10: VersionedData[T10], v11: VersionedData[T11], v12: VersionedData[T12], v13: VersionedData[T13], v14: VersionedData[T14], v15: VersionedData[T15], v16: VersionedData[T16]): Agg16[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, R] = {
       Agg16(
@@ -649,7 +664,7 @@ trait Generated22 {
 
   }
 
-  case class Agg17[-T1, -T2, -T3, -T4, -T5, -T6, -T7, -T8, -T9, -T10, -T11, -T12, -T13, -T14, -T15, -T16, -T17, +R](v1: CalcVersionAssigned, v2: CalcVersionAssigned, v3: CalcVersionAssigned, v4: CalcVersionAssigned, v5: CalcVersionAssigned, v6: CalcVersionAssigned, v7: CalcVersionAssigned, v8: CalcVersionAssigned, v9: CalcVersionAssigned, v10: CalcVersionAssigned, v11: CalcVersionAssigned, v12: CalcVersionAssigned, v13: CalcVersionAssigned, v14: CalcVersionAssigned, v15: CalcVersionAssigned, v16: CalcVersionAssigned, v17: CalcVersionAssigned, r: UnversionedData[R]) extends Agg[R]
+  case class Agg17[-T1 : TypeTag, -T2 : TypeTag, -T3 : TypeTag, -T4 : TypeTag, -T5 : TypeTag, -T6 : TypeTag, -T7 : TypeTag, -T8 : TypeTag, -T9 : TypeTag, -T10 : TypeTag, -T11 : TypeTag, -T12 : TypeTag, -T13 : TypeTag, -T14 : TypeTag, -T15 : TypeTag, -T16 : TypeTag, -T17 : TypeTag, +R](v1: CalcVersionAssigned, v2: CalcVersionAssigned, v3: CalcVersionAssigned, v4: CalcVersionAssigned, v5: CalcVersionAssigned, v6: CalcVersionAssigned, v7: CalcVersionAssigned, v8: CalcVersionAssigned, v9: CalcVersionAssigned, v10: CalcVersionAssigned, v11: CalcVersionAssigned, v12: CalcVersionAssigned, v13: CalcVersionAssigned, v14: CalcVersionAssigned, v15: CalcVersionAssigned, v16: CalcVersionAssigned, v17: CalcVersionAssigned, r: UnversionedData[R]) extends Agg[R]
   {
     protected def logInputs(calcVersionAssigned: CalcVersionAssigned)(implicit calcRepository: CalcRepository): Try[Unit] = {
       calcRepository.logInput(InputRecord[T1](calcVersion = calcVersionAssigned, inputCalc = this.v1))
@@ -671,7 +686,7 @@ trait Generated22 {
       calcRepository.logInput(InputRecord[T17](calcVersion = calcVersionAssigned, inputCalc = this.v17))
     }
   }
-  trait Calc17[-T1, -T2, -T3, -T4, -T5, -T6, -T7, -T8, -T9, -T10, -T11, -T12, -T13, -T14, -T15, -T16, -T17, +R] extends Function17[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, R] with Calc[R] {
+  trait Calc17[-T1, -T2, -T3, -T4, -T5, -T6, -T7, -T8, -T9, -T10, -T11, -T12, -T13, -T14, -T15, -T16, -T17, +R] extends Function17[VersionedData[T1], VersionedData[T2], VersionedData[T3], VersionedData[T4], VersionedData[T5], VersionedData[T6], VersionedData[T7], VersionedData[T8], VersionedData[T9], VersionedData[T10], VersionedData[T11], VersionedData[T12], VersionedData[T13], VersionedData[T14], VersionedData[T15], VersionedData[T16], VersionedData[T17], Agg17[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, R]] with Calc[R] {
     def f: (T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17) => R
     def apply(v1: VersionedData[T1], v2: VersionedData[T2], v3: VersionedData[T3], v4: VersionedData[T4], v5: VersionedData[T5], v6: VersionedData[T6], v7: VersionedData[T7], v8: VersionedData[T8], v9: VersionedData[T9], v10: VersionedData[T10], v11: VersionedData[T11], v12: VersionedData[T12], v13: VersionedData[T13], v14: VersionedData[T14], v15: VersionedData[T15], v16: VersionedData[T16], v17: VersionedData[T17]): Agg17[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, R] = {
       Agg17(
@@ -698,7 +713,7 @@ trait Generated22 {
 
   }
 
-  case class Agg18[-T1, -T2, -T3, -T4, -T5, -T6, -T7, -T8, -T9, -T10, -T11, -T12, -T13, -T14, -T15, -T16, -T17, -T18, +R](v1: CalcVersionAssigned, v2: CalcVersionAssigned, v3: CalcVersionAssigned, v4: CalcVersionAssigned, v5: CalcVersionAssigned, v6: CalcVersionAssigned, v7: CalcVersionAssigned, v8: CalcVersionAssigned, v9: CalcVersionAssigned, v10: CalcVersionAssigned, v11: CalcVersionAssigned, v12: CalcVersionAssigned, v13: CalcVersionAssigned, v14: CalcVersionAssigned, v15: CalcVersionAssigned, v16: CalcVersionAssigned, v17: CalcVersionAssigned, v18: CalcVersionAssigned, r: UnversionedData[R]) extends Agg[R]
+  case class Agg18[-T1 : TypeTag, -T2 : TypeTag, -T3 : TypeTag, -T4 : TypeTag, -T5 : TypeTag, -T6 : TypeTag, -T7 : TypeTag, -T8 : TypeTag, -T9 : TypeTag, -T10 : TypeTag, -T11 : TypeTag, -T12 : TypeTag, -T13 : TypeTag, -T14 : TypeTag, -T15 : TypeTag, -T16 : TypeTag, -T17 : TypeTag, -T18 : TypeTag, +R](v1: CalcVersionAssigned, v2: CalcVersionAssigned, v3: CalcVersionAssigned, v4: CalcVersionAssigned, v5: CalcVersionAssigned, v6: CalcVersionAssigned, v7: CalcVersionAssigned, v8: CalcVersionAssigned, v9: CalcVersionAssigned, v10: CalcVersionAssigned, v11: CalcVersionAssigned, v12: CalcVersionAssigned, v13: CalcVersionAssigned, v14: CalcVersionAssigned, v15: CalcVersionAssigned, v16: CalcVersionAssigned, v17: CalcVersionAssigned, v18: CalcVersionAssigned, r: UnversionedData[R]) extends Agg[R]
   {
     protected def logInputs(calcVersionAssigned: CalcVersionAssigned)(implicit calcRepository: CalcRepository): Try[Unit] = {
       calcRepository.logInput(InputRecord[T1](calcVersion = calcVersionAssigned, inputCalc = this.v1))
@@ -721,7 +736,7 @@ trait Generated22 {
       calcRepository.logInput(InputRecord[T18](calcVersion = calcVersionAssigned, inputCalc = this.v18))
     }
   }
-  trait Calc18[-T1, -T2, -T3, -T4, -T5, -T6, -T7, -T8, -T9, -T10, -T11, -T12, -T13, -T14, -T15, -T16, -T17, -T18, +R] extends Function18[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, R] with Calc[R] {
+  trait Calc18[-T1, -T2, -T3, -T4, -T5, -T6, -T7, -T8, -T9, -T10, -T11, -T12, -T13, -T14, -T15, -T16, -T17, -T18, +R] extends Function18[VersionedData[T1], VersionedData[T2], VersionedData[T3], VersionedData[T4], VersionedData[T5], VersionedData[T6], VersionedData[T7], VersionedData[T8], VersionedData[T9], VersionedData[T10], VersionedData[T11], VersionedData[T12], VersionedData[T13], VersionedData[T14], VersionedData[T15], VersionedData[T16], VersionedData[T17], VersionedData[T18], Agg18[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, R]] with Calc[R] {
     def f: (T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18) => R
     def apply(v1: VersionedData[T1], v2: VersionedData[T2], v3: VersionedData[T3], v4: VersionedData[T4], v5: VersionedData[T5], v6: VersionedData[T6], v7: VersionedData[T7], v8: VersionedData[T8], v9: VersionedData[T9], v10: VersionedData[T10], v11: VersionedData[T11], v12: VersionedData[T12], v13: VersionedData[T13], v14: VersionedData[T14], v15: VersionedData[T15], v16: VersionedData[T16], v17: VersionedData[T17], v18: VersionedData[T18]): Agg18[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, R] = {
       Agg18(
@@ -749,7 +764,7 @@ trait Generated22 {
 
   }
 
-  case class Agg19[-T1, -T2, -T3, -T4, -T5, -T6, -T7, -T8, -T9, -T10, -T11, -T12, -T13, -T14, -T15, -T16, -T17, -T18, -T19, +R](v1: CalcVersionAssigned, v2: CalcVersionAssigned, v3: CalcVersionAssigned, v4: CalcVersionAssigned, v5: CalcVersionAssigned, v6: CalcVersionAssigned, v7: CalcVersionAssigned, v8: CalcVersionAssigned, v9: CalcVersionAssigned, v10: CalcVersionAssigned, v11: CalcVersionAssigned, v12: CalcVersionAssigned, v13: CalcVersionAssigned, v14: CalcVersionAssigned, v15: CalcVersionAssigned, v16: CalcVersionAssigned, v17: CalcVersionAssigned, v18: CalcVersionAssigned, v19: CalcVersionAssigned, r: UnversionedData[R]) extends Agg[R]
+  case class Agg19[-T1 : TypeTag, -T2 : TypeTag, -T3 : TypeTag, -T4 : TypeTag, -T5 : TypeTag, -T6 : TypeTag, -T7 : TypeTag, -T8 : TypeTag, -T9 : TypeTag, -T10 : TypeTag, -T11 : TypeTag, -T12 : TypeTag, -T13 : TypeTag, -T14 : TypeTag, -T15 : TypeTag, -T16 : TypeTag, -T17 : TypeTag, -T18 : TypeTag, -T19 : TypeTag, +R](v1: CalcVersionAssigned, v2: CalcVersionAssigned, v3: CalcVersionAssigned, v4: CalcVersionAssigned, v5: CalcVersionAssigned, v6: CalcVersionAssigned, v7: CalcVersionAssigned, v8: CalcVersionAssigned, v9: CalcVersionAssigned, v10: CalcVersionAssigned, v11: CalcVersionAssigned, v12: CalcVersionAssigned, v13: CalcVersionAssigned, v14: CalcVersionAssigned, v15: CalcVersionAssigned, v16: CalcVersionAssigned, v17: CalcVersionAssigned, v18: CalcVersionAssigned, v19: CalcVersionAssigned, r: UnversionedData[R]) extends Agg[R]
   {
     protected def logInputs(calcVersionAssigned: CalcVersionAssigned)(implicit calcRepository: CalcRepository): Try[Unit] = {
       calcRepository.logInput(InputRecord[T1](calcVersion = calcVersionAssigned, inputCalc = this.v1))
@@ -773,7 +788,7 @@ trait Generated22 {
       calcRepository.logInput(InputRecord[T19](calcVersion = calcVersionAssigned, inputCalc = this.v19))
     }
   }
-  trait Calc19[-T1, -T2, -T3, -T4, -T5, -T6, -T7, -T8, -T9, -T10, -T11, -T12, -T13, -T14, -T15, -T16, -T17, -T18, -T19, +R] extends Function19[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, R] with Calc[R] {
+  trait Calc19[-T1, -T2, -T3, -T4, -T5, -T6, -T7, -T8, -T9, -T10, -T11, -T12, -T13, -T14, -T15, -T16, -T17, -T18, -T19, +R] extends Function19[VersionedData[T1], VersionedData[T2], VersionedData[T3], VersionedData[T4], VersionedData[T5], VersionedData[T6], VersionedData[T7], VersionedData[T8], VersionedData[T9], VersionedData[T10], VersionedData[T11], VersionedData[T12], VersionedData[T13], VersionedData[T14], VersionedData[T15], VersionedData[T16], VersionedData[T17], VersionedData[T18], VersionedData[T19], Agg19[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, R]] with Calc[R] {
     def f: (T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19) => R
     def apply(v1: VersionedData[T1], v2: VersionedData[T2], v3: VersionedData[T3], v4: VersionedData[T4], v5: VersionedData[T5], v6: VersionedData[T6], v7: VersionedData[T7], v8: VersionedData[T8], v9: VersionedData[T9], v10: VersionedData[T10], v11: VersionedData[T11], v12: VersionedData[T12], v13: VersionedData[T13], v14: VersionedData[T14], v15: VersionedData[T15], v16: VersionedData[T16], v17: VersionedData[T17], v18: VersionedData[T18], v19: VersionedData[T19]): Agg19[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, R] = {
       Agg19(
@@ -802,7 +817,7 @@ trait Generated22 {
 
   }
 
-  case class Agg20[-T1, -T2, -T3, -T4, -T5, -T6, -T7, -T8, -T9, -T10, -T11, -T12, -T13, -T14, -T15, -T16, -T17, -T18, -T19, -T20, +R](v1: CalcVersionAssigned, v2: CalcVersionAssigned, v3: CalcVersionAssigned, v4: CalcVersionAssigned, v5: CalcVersionAssigned, v6: CalcVersionAssigned, v7: CalcVersionAssigned, v8: CalcVersionAssigned, v9: CalcVersionAssigned, v10: CalcVersionAssigned, v11: CalcVersionAssigned, v12: CalcVersionAssigned, v13: CalcVersionAssigned, v14: CalcVersionAssigned, v15: CalcVersionAssigned, v16: CalcVersionAssigned, v17: CalcVersionAssigned, v18: CalcVersionAssigned, v19: CalcVersionAssigned, v20: CalcVersionAssigned, r: UnversionedData[R]) extends Agg[R]
+  case class Agg20[-T1 : TypeTag, -T2 : TypeTag, -T3 : TypeTag, -T4 : TypeTag, -T5 : TypeTag, -T6 : TypeTag, -T7 : TypeTag, -T8 : TypeTag, -T9 : TypeTag, -T10 : TypeTag, -T11 : TypeTag, -T12 : TypeTag, -T13 : TypeTag, -T14 : TypeTag, -T15 : TypeTag, -T16 : TypeTag, -T17 : TypeTag, -T18 : TypeTag, -T19 : TypeTag, -T20 : TypeTag, +R](v1: CalcVersionAssigned, v2: CalcVersionAssigned, v3: CalcVersionAssigned, v4: CalcVersionAssigned, v5: CalcVersionAssigned, v6: CalcVersionAssigned, v7: CalcVersionAssigned, v8: CalcVersionAssigned, v9: CalcVersionAssigned, v10: CalcVersionAssigned, v11: CalcVersionAssigned, v12: CalcVersionAssigned, v13: CalcVersionAssigned, v14: CalcVersionAssigned, v15: CalcVersionAssigned, v16: CalcVersionAssigned, v17: CalcVersionAssigned, v18: CalcVersionAssigned, v19: CalcVersionAssigned, v20: CalcVersionAssigned, r: UnversionedData[R]) extends Agg[R]
   {
     protected def logInputs(calcVersionAssigned: CalcVersionAssigned)(implicit calcRepository: CalcRepository): Try[Unit] = {
       calcRepository.logInput(InputRecord[T1](calcVersion = calcVersionAssigned, inputCalc = this.v1))
@@ -827,7 +842,7 @@ trait Generated22 {
       calcRepository.logInput(InputRecord[T20](calcVersion = calcVersionAssigned, inputCalc = this.v20))
     }
   }
-  trait Calc20[-T1, -T2, -T3, -T4, -T5, -T6, -T7, -T8, -T9, -T10, -T11, -T12, -T13, -T14, -T15, -T16, -T17, -T18, -T19, -T20, +R] extends Function20[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, R] with Calc[R] {
+  trait Calc20[-T1, -T2, -T3, -T4, -T5, -T6, -T7, -T8, -T9, -T10, -T11, -T12, -T13, -T14, -T15, -T16, -T17, -T18, -T19, -T20, +R] extends Function20[VersionedData[T1], VersionedData[T2], VersionedData[T3], VersionedData[T4], VersionedData[T5], VersionedData[T6], VersionedData[T7], VersionedData[T8], VersionedData[T9], VersionedData[T10], VersionedData[T11], VersionedData[T12], VersionedData[T13], VersionedData[T14], VersionedData[T15], VersionedData[T16], VersionedData[T17], VersionedData[T18], VersionedData[T19], VersionedData[T20], Agg20[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, R]] with Calc[R] {
     def f: (T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20) => R
     def apply(v1: VersionedData[T1], v2: VersionedData[T2], v3: VersionedData[T3], v4: VersionedData[T4], v5: VersionedData[T5], v6: VersionedData[T6], v7: VersionedData[T7], v8: VersionedData[T8], v9: VersionedData[T9], v10: VersionedData[T10], v11: VersionedData[T11], v12: VersionedData[T12], v13: VersionedData[T13], v14: VersionedData[T14], v15: VersionedData[T15], v16: VersionedData[T16], v17: VersionedData[T17], v18: VersionedData[T18], v19: VersionedData[T19], v20: VersionedData[T20]): Agg20[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, R] = {
       Agg20(
@@ -857,7 +872,7 @@ trait Generated22 {
 
   }
 
-  case class Agg21[-T1, -T2, -T3, -T4, -T5, -T6, -T7, -T8, -T9, -T10, -T11, -T12, -T13, -T14, -T15, -T16, -T17, -T18, -T19, -T20, -T21, +R](v1: CalcVersionAssigned, v2: CalcVersionAssigned, v3: CalcVersionAssigned, v4: CalcVersionAssigned, v5: CalcVersionAssigned, v6: CalcVersionAssigned, v7: CalcVersionAssigned, v8: CalcVersionAssigned, v9: CalcVersionAssigned, v10: CalcVersionAssigned, v11: CalcVersionAssigned, v12: CalcVersionAssigned, v13: CalcVersionAssigned, v14: CalcVersionAssigned, v15: CalcVersionAssigned, v16: CalcVersionAssigned, v17: CalcVersionAssigned, v18: CalcVersionAssigned, v19: CalcVersionAssigned, v20: CalcVersionAssigned, v21: CalcVersionAssigned, r: UnversionedData[R]) extends Agg[R]
+  case class Agg21[-T1 : TypeTag, -T2 : TypeTag, -T3 : TypeTag, -T4 : TypeTag, -T5 : TypeTag, -T6 : TypeTag, -T7 : TypeTag, -T8 : TypeTag, -T9 : TypeTag, -T10 : TypeTag, -T11 : TypeTag, -T12 : TypeTag, -T13 : TypeTag, -T14 : TypeTag, -T15 : TypeTag, -T16 : TypeTag, -T17 : TypeTag, -T18 : TypeTag, -T19 : TypeTag, -T20 : TypeTag, -T21 : TypeTag, +R](v1: CalcVersionAssigned, v2: CalcVersionAssigned, v3: CalcVersionAssigned, v4: CalcVersionAssigned, v5: CalcVersionAssigned, v6: CalcVersionAssigned, v7: CalcVersionAssigned, v8: CalcVersionAssigned, v9: CalcVersionAssigned, v10: CalcVersionAssigned, v11: CalcVersionAssigned, v12: CalcVersionAssigned, v13: CalcVersionAssigned, v14: CalcVersionAssigned, v15: CalcVersionAssigned, v16: CalcVersionAssigned, v17: CalcVersionAssigned, v18: CalcVersionAssigned, v19: CalcVersionAssigned, v20: CalcVersionAssigned, v21: CalcVersionAssigned, r: UnversionedData[R]) extends Agg[R]
   {
     protected def logInputs(calcVersionAssigned: CalcVersionAssigned)(implicit calcRepository: CalcRepository): Try[Unit] = {
       calcRepository.logInput(InputRecord[T1](calcVersion = calcVersionAssigned, inputCalc = this.v1))
@@ -883,7 +898,7 @@ trait Generated22 {
       calcRepository.logInput(InputRecord[T21](calcVersion = calcVersionAssigned, inputCalc = this.v21))
     }
   }
-  trait Calc21[-T1, -T2, -T3, -T4, -T5, -T6, -T7, -T8, -T9, -T10, -T11, -T12, -T13, -T14, -T15, -T16, -T17, -T18, -T19, -T20, -T21, +R] extends Function21[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, R] with Calc[R] {
+  trait Calc21[-T1, -T2, -T3, -T4, -T5, -T6, -T7, -T8, -T9, -T10, -T11, -T12, -T13, -T14, -T15, -T16, -T17, -T18, -T19, -T20, -T21, +R] extends Function21[VersionedData[T1], VersionedData[T2], VersionedData[T3], VersionedData[T4], VersionedData[T5], VersionedData[T6], VersionedData[T7], VersionedData[T8], VersionedData[T9], VersionedData[T10], VersionedData[T11], VersionedData[T12], VersionedData[T13], VersionedData[T14], VersionedData[T15], VersionedData[T16], VersionedData[T17], VersionedData[T18], VersionedData[T19], VersionedData[T20], VersionedData[T21], Agg21[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, R]] with Calc[R] {
     def f: (T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21) => R
     def apply(v1: VersionedData[T1], v2: VersionedData[T2], v3: VersionedData[T3], v4: VersionedData[T4], v5: VersionedData[T5], v6: VersionedData[T6], v7: VersionedData[T7], v8: VersionedData[T8], v9: VersionedData[T9], v10: VersionedData[T10], v11: VersionedData[T11], v12: VersionedData[T12], v13: VersionedData[T13], v14: VersionedData[T14], v15: VersionedData[T15], v16: VersionedData[T16], v17: VersionedData[T17], v18: VersionedData[T18], v19: VersionedData[T19], v20: VersionedData[T20], v21: VersionedData[T21]): Agg21[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, R] = {
       Agg21(
@@ -914,7 +929,7 @@ trait Generated22 {
 
   }
 
-  case class Agg22[-T1, -T2, -T3, -T4, -T5, -T6, -T7, -T8, -T9, -T10, -T11, -T12, -T13, -T14, -T15, -T16, -T17, -T18, -T19, -T20, -T21, -T22, +R](v1: CalcVersionAssigned, v2: CalcVersionAssigned, v3: CalcVersionAssigned, v4: CalcVersionAssigned, v5: CalcVersionAssigned, v6: CalcVersionAssigned, v7: CalcVersionAssigned, v8: CalcVersionAssigned, v9: CalcVersionAssigned, v10: CalcVersionAssigned, v11: CalcVersionAssigned, v12: CalcVersionAssigned, v13: CalcVersionAssigned, v14: CalcVersionAssigned, v15: CalcVersionAssigned, v16: CalcVersionAssigned, v17: CalcVersionAssigned, v18: CalcVersionAssigned, v19: CalcVersionAssigned, v20: CalcVersionAssigned, v21: CalcVersionAssigned, v22: CalcVersionAssigned, r: UnversionedData[R]) extends Agg[R]
+  case class Agg22[-T1 : TypeTag, -T2 : TypeTag, -T3 : TypeTag, -T4 : TypeTag, -T5 : TypeTag, -T6 : TypeTag, -T7 : TypeTag, -T8 : TypeTag, -T9 : TypeTag, -T10 : TypeTag, -T11 : TypeTag, -T12 : TypeTag, -T13 : TypeTag, -T14 : TypeTag, -T15 : TypeTag, -T16 : TypeTag, -T17 : TypeTag, -T18 : TypeTag, -T19 : TypeTag, -T20 : TypeTag, -T21 : TypeTag, -T22 : TypeTag, +R](v1: CalcVersionAssigned, v2: CalcVersionAssigned, v3: CalcVersionAssigned, v4: CalcVersionAssigned, v5: CalcVersionAssigned, v6: CalcVersionAssigned, v7: CalcVersionAssigned, v8: CalcVersionAssigned, v9: CalcVersionAssigned, v10: CalcVersionAssigned, v11: CalcVersionAssigned, v12: CalcVersionAssigned, v13: CalcVersionAssigned, v14: CalcVersionAssigned, v15: CalcVersionAssigned, v16: CalcVersionAssigned, v17: CalcVersionAssigned, v18: CalcVersionAssigned, v19: CalcVersionAssigned, v20: CalcVersionAssigned, v21: CalcVersionAssigned, v22: CalcVersionAssigned, r: UnversionedData[R]) extends Agg[R]
   {
     protected def logInputs(calcVersionAssigned: CalcVersionAssigned)(implicit calcRepository: CalcRepository): Try[Unit] = {
       calcRepository.logInput(InputRecord[T1](calcVersion = calcVersionAssigned, inputCalc = this.v1))
@@ -941,7 +956,7 @@ trait Generated22 {
       calcRepository.logInput(InputRecord[T22](calcVersion = calcVersionAssigned, inputCalc = this.v22))
     }
   }
-  trait Calc22[-T1, -T2, -T3, -T4, -T5, -T6, -T7, -T8, -T9, -T10, -T11, -T12, -T13, -T14, -T15, -T16, -T17, -T18, -T19, -T20, -T21, -T22, +R] extends Function22[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, R] with Calc[R] {
+  trait Calc22[-T1, -T2, -T3, -T4, -T5, -T6, -T7, -T8, -T9, -T10, -T11, -T12, -T13, -T14, -T15, -T16, -T17, -T18, -T19, -T20, -T21, -T22, +R] extends Function22[VersionedData[T1], VersionedData[T2], VersionedData[T3], VersionedData[T4], VersionedData[T5], VersionedData[T6], VersionedData[T7], VersionedData[T8], VersionedData[T9], VersionedData[T10], VersionedData[T11], VersionedData[T12], VersionedData[T13], VersionedData[T14], VersionedData[T15], VersionedData[T16], VersionedData[T17], VersionedData[T18], VersionedData[T19], VersionedData[T20], VersionedData[T21], VersionedData[T22], Agg22[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, R]] with Calc[R] {
     def f: (T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22) => R
     def apply(v1: VersionedData[T1], v2: VersionedData[T2], v3: VersionedData[T3], v4: VersionedData[T4], v5: VersionedData[T5], v6: VersionedData[T6], v7: VersionedData[T7], v8: VersionedData[T8], v9: VersionedData[T9], v10: VersionedData[T10], v11: VersionedData[T11], v12: VersionedData[T12], v13: VersionedData[T13], v14: VersionedData[T14], v15: VersionedData[T15], v16: VersionedData[T16], v17: VersionedData[T17], v18: VersionedData[T18], v19: VersionedData[T19], v20: VersionedData[T20], v21: VersionedData[T21], v22: VersionedData[T22]): Agg22[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, R] = {
       Agg22(
@@ -974,12 +989,9 @@ trait Generated22 {
   }
 
 
-
 }
 
 object Verbose22Agg {
-
-  import Verbose22._
 
   //  import shapeless
 
