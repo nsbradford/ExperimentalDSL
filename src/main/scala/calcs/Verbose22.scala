@@ -44,63 +44,11 @@ object GenerateText extends App {
   }
 }
 
+
 /**
   * Initial design - have a Calc for each Function1-22
   */
-trait Verbose22 {
-
-  // TODO(nick.bradford) probably a lot of these need typetags?
-
-  /**
-    * Just a single Try for now; in the future will wrap in Future or IO.
-    */
-  trait HasRepository[T]{
-    final def fullName: String = s"$dataConceptName: ${this.getClass.getName}"
-    def dataConceptName: String // TODO(nick.bradford) not sure if we should keep this as part of interface
-    def persist(t: VersionedDataUnpersisted[T]): Try[Unit]
-    def hydrate(version: CalcVersionAssigned): Try[T]
-    def hydrateLatestValid(): Try[VersionedData[T]]
-  }
-
-  object HasRepository {
-    def apply[T](implicit ev: HasRepository[T]): HasRepository[T] = ev
-  }
-
-  /**
-    * Data is unversioned upon production, and requires connection to the outside world to assign.
-    */
-  sealed trait CalcVersion {
-    def calcName: String
-  }
-  case class CalcVersionAssigned(calcName: String, calcRunId: Long) extends CalcVersion
-  case class CalcUnversioned(calcName: String) extends CalcVersion // attach some extra way to prevent two of these from looking equal?
-
-//  case class TypedCalcVersion[+T](calcVersion: CalcVersion) // TODO(nick.bradford) requires contravariance to work...
-
-  /**
-    * Data always has a version.
-    */
-//  trait DataWithVersion
-  case class VersionedData[+T](data: T, version: CalcVersionAssigned)// extends DataWithVersion
-  case class UnversionedData[+T](data: T, version: CalcUnversioned)// extends DataWithVersion
-  case class VersionedDataUnpersisted[+T](data: T, version: CalcVersionAssigned)
-
-  /**
-    * Metadata records:
-    *   Input: CalcVersion used VersionedData
-    *   Output: CalcVersion produced [Type]
-    *   Equivalence/Hierarchy: CalcVersion output [Type] == other CalcVersion of same type
-    */
-  case class InputRecord[T](calcVersion: CalcVersionAssigned, inputCalc: CalcVersionAssigned)
-  case class OutputRecord[T](calcVersion: CalcVersionAssigned)
-  //  case class HierarchyRecord[+T](upperCalcVersion: CalcVersion, innerCalcVersion: CalcVersion)
-
-  trait CalcRepository {
-    def requisitionNewRunId(calcName: String): Try[CalcVersionAssigned]
-    def logInput[T : HasRepository](inputRecord: InputRecord[T]): Try[Unit]
-    def logOutput[T : TypeTag](outputRecord: OutputRecord[T]): Try[Unit]
-    //    def logEquivalence[T](hierarchyRecord: HierarchyRecord[T]): Unit
-  }
+trait Verbose22 extends SharedModel {
 
   /**
     * Immediately hit with a problem: Calculators must maintain internal state to record
@@ -108,7 +56,7 @@ trait Verbose22 {
     */
   sealed trait Agg[+R]{
     def r: UnversionedData[R]
-    protected def logInputs(calcVersionAssigned: CalcVersionAssigned)(implicit calcRepository: CalcRepository): Try[Unit]
+//    protected def logInputs(calcVersionAssigned: CalcVersionAssigned)(implicit calcRepository: CalcRepository): Try[Unit]
     final def source: CalcUnversioned = r.version
   }
 
@@ -121,11 +69,12 @@ trait Verbose22 {
                                   calcRepository: CalcRepository): Try[VersionedData[R]] = {
       for {
         newCalcId <- calcRepository.requisitionNewRunId(agg.source.calcName)
-        _ <- agg.logInputs(newCalcId)
         newlyVersionedData = VersionedDataUnpersisted(data = agg.r.data, version = newCalcId)
         _ <- ev.persist(newlyVersionedData)
       } yield VersionedData[R](newlyVersionedData.data, newlyVersionedData.version)
     }
+
+
   }
 
   sealed trait Calc[+R]{
@@ -139,15 +88,15 @@ trait Verbose22 {
   }
   object Calc{
     // TODO has apply methods for all the intermediate calcs
-//    def apply[T1, R](minorName: String, func: (T1) => R) = new Calc1[T1, R]{
-//      override def f: (T1) => R = func
-//      override def name: String = minorName
-//    }
-//
-//    def apply[T1, T2, R](minorName: String, func: (T1, T2) => R) = new Calc2[T1, T2, R]{
-//      override def f: (T1, T2) => R = func
-//      override def name: String = minorName
-//    }
+    def apply[T1, R](minorName: String, func: (T1) => R) = new Calc1[T1, R]{
+      override def f: (T1) => R = func
+      override def name: String = minorName
+    }
+
+    def apply[T1, T2, R](minorName: String, func: (T1, T2) => R) = new Calc2[T1, T2, R]{
+      override def f: (T1, T2) => R = func
+      override def name: String = minorName
+    }
   }
 
 
@@ -156,45 +105,49 @@ trait Verbose22 {
   //==============================================================================================================
 
   // TODO big issue: still can't get type info of T1 into the CalcRepository - would require ClassTags (?) in all Calcs.
-  // TODO tried solving by changing to HasRepository[T]
-  case class Agg1[-T1, +R](v1: CalcVersionAssigned, r: UnversionedData[R]) extends Agg[R]
+  // TODO adding HasRepository[T] means that we have to eliminate all the variance notations, which feels wrong
+
+  case class Agg1[T1, +R](v1: CalcVersionAssigned, r: UnversionedData[R]) extends Agg[R]
   {
-    protected def logInputs(calcVersionAssigned: CalcVersionAssigned)
+    def logInputs(calcVersionAssigned: CalcVersionAssigned)
                            (implicit calcRepository: CalcRepository,
                             ev: HasRepository[T1]): Try[Unit] = {
       calcRepository.logInput(InputRecord[T1](calcVersion = calcVersionAssigned, inputCalc = this.v1))
     }
   }
-  trait Calc1[-T1, +R] extends Function1[VersionedData[T1], Agg1[T1, R]] with Calc[R] {
+  trait Calc1[T1, +R] extends Function1[VersionedData[T1], Agg1[T1, R]] with Calc[R] {
     def f: (T1) => R
     def apply(v1: VersionedData[T1]): Agg1[T1, R] = {
       Agg1(
         v1.version,
-        UnversionedData(f(v1.data), CalcUnversioned(this.name))
+        UnversionedData(f(v1.data), CalcUnversioned(CalcName(this.name)))
       )
     }
 
   }
 
-//  case class Agg2[-T1, -T2, +R](v1: CalcVersionAssigned, v2: CalcVersionAssigned, r: UnversionedData[R]) extends Agg[R]
-//  {
-//    protected def logInputs(calcVersionAssigned: CalcVersionAssigned)(implicit calcRepository: CalcRepository): Try[Unit] = {
-//      calcRepository.logInput(InputRecord[T1](calcVersion = calcVersionAssigned, inputCalc = this.v1))
-//      calcRepository.logInput(InputRecord[T2](calcVersion = calcVersionAssigned, inputCalc = this.v2))
-//    }
-//  }
-//  trait Calc2[-T1, -T2, +R] extends Function2[VersionedData[T1], VersionedData[T2], Agg2[T1, T2, R]] with Calc[R] {
-//    def f: (T1, T2) => R
-//    def apply(v1: VersionedData[T1], v2: VersionedData[T2]): Agg2[T1, T2, R] = {
-//      Agg2(
-//        v1.version,
-//        v2.version,
-//        UnversionedData(f(v1.data, v2.data), CalcUnversioned(this.name))
-//      )
-//    }
-//
-//  }
-//
+  case class Agg2[T1, T2, +R](v1: CalcVersionAssigned, v2: CalcVersionAssigned, r: UnversionedData[R]) extends Agg[R]
+  {
+    def logInputs(calcVersionAssigned: CalcVersionAssigned)
+                           (implicit calcRepository: CalcRepository,
+                            ev: HasRepository[T1],
+                            ev2: HasRepository[T2]): Try[Unit] = {
+      calcRepository.logInput(InputRecord[T1](calcVersion = calcVersionAssigned, inputCalc = this.v1))
+      calcRepository.logInput(InputRecord[T2](calcVersion = calcVersionAssigned, inputCalc = this.v2))
+    }
+  }
+  trait Calc2[T1, T2, +R] extends Function2[VersionedData[T1], VersionedData[T2], Agg2[T1, T2, R]] with Calc[R] {
+    def f: (T1, T2) => R
+    def apply(v1: VersionedData[T1], v2: VersionedData[T2]): Agg2[T1, T2, R] = {
+      Agg2(
+        v1.version,
+        v2.version,
+        UnversionedData(f(v1.data, v2.data), CalcUnversioned(CalcName(this.name)))
+      )
+    }
+
+  }
+
 //  case class Agg3[-T1, -T2, -T3, +R](v1: CalcVersionAssigned, v2: CalcVersionAssigned, v3: CalcVersionAssigned, r: UnversionedData[R]) extends Agg[R]
 //  {
 //    protected def logInputs(calcVersionAssigned: CalcVersionAssigned)(implicit calcRepository: CalcRepository): Try[Unit] = {
