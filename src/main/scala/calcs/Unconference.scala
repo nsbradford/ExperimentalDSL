@@ -8,6 +8,11 @@ package calcs
   * nsbradford@gmail.com
   * www.nicholasbradford.io
   *
+  * https://github.com/nsbradford/ExperimentalDSL
+  *
+  * Disclaimers:
+  *   -Experimental
+  *   -Forgot to use markdown, sorry :(
   *
   * What can you expect?
   *   -Problem context and interesting ideas
@@ -21,6 +26,7 @@ package calcs
   * What can you not expect?
   *   -A framework that already works (but a chance to help create one)
   *   -Learning new things about type theory
+  *
   *
   */
 object Unconference {
@@ -190,6 +196,16 @@ object Unconference {
     *
     *
     * .... and more...
+    * ---------
+    * (Bonus) Implicit chaining
+    *
+    *   Unfortunately not on this computer, but if you want to calculate an [R], given
+    *     implicit ev: Calc[(InputLayer1), R]
+    *     implicit ev: Calc[(InputLayer2), (InputLayer1)]
+    *     ...
+    *     automatically derive the typeclass (i.e. with Shapeless), and then summon:
+    *
+    *     val derivedCalcTree: Calc[Unit, R] = Calc.summon[R]
     *
     *
     */

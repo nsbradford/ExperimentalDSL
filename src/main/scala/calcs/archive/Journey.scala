@@ -1,4 +1,4 @@
-package calcs
+package calcs.archive
 
 /**
   * For the calculator pattern, we have some goals:
@@ -151,10 +151,9 @@ trait Journey {
     * Can't accomplish this with just Functions... we'd need Futures (or Task/IO) for that.
     */
   def pipelineWrappedFutures: Dout = {
-    import scala.concurrent.Future
-    import scala.concurrent.Await
-    import scala.concurrent.duration._
     import scala.concurrent.ExecutionContext.Implicits.global
+    import scala.concurrent.{Await, Future}
+    import scala.concurrent.duration._
 
     val af = Future(aCalc())
 
@@ -180,10 +179,9 @@ trait Journey {
     *   if they internally had some par/async stuff going on.
     */
   def pipelineFuturizedCalcs: Dout = {
-    import scala.concurrent.Future
-    import scala.concurrent.Await
-    import scala.concurrent.duration._
     import scala.concurrent.ExecutionContext.Implicits.global
+    import scala.concurrent.{Await, Future}
+    import scala.concurrent.duration._
 
     val aFut: () => Future[Aout] = ??? // implies default of "get latest valid"
     val bFut: (Aout) => Future[Bout] = ???
@@ -285,10 +283,6 @@ trait Journey {
     */
   object WritingDiagsSinglePipe {
     import cats.data.Writer
-    import cats.instances.vector._
-    import cats.syntax.applicative._
-    import cats.syntax.writer._
-    import cats.syntax.all._
 
     type Logged[T] = Writer[Seq[String], T]
     val alog: Logged[Aout] = Writer(Seq("A"), new Aout{})

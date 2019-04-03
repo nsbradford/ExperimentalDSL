@@ -1,6 +1,4 @@
-package calcs
-
-import scala.util.Try
+package calcs.archive
 
 /**
   * Created by nicholasbradford on 3/31/19.
