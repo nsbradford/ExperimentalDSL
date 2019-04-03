@@ -9,8 +9,8 @@ trait SharedModel {
     * Just a single Try for now; in the future will wrap in Future or IO.
     */
   trait HasRepository[T]{
-    final def fullName: String = s"$dataConceptName: ${this.getClass.getName}"
-    def dataConceptName: String // TODO(nick.bradford) not sure if we should keep this as part of interface
+    final def fullName: String = s"$dataConceptName: ${this.getClass.getName}" // eliminates collisions
+    def dataConceptName: String // TODO not sure if we should keep this as part of interface
     def persist(t: VersionedDataUnpersisted[T]): Try[Unit]
     def hydrate(version: CalcVersionAssigned): Try[T]
     def hydrateLatestValid(): Try[VersionedData[T]]

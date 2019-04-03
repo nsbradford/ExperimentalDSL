@@ -68,15 +68,15 @@ object Verbose22Demo extends App {
     for {
       versionedDouble <- HasRepository[Double].hydrateLatestValid()
 
-      intermediateResultAgg: Agg1[Double, Double] = demoCalc1(versionedDouble)
-      intermediateResult: VersionedData[Double] <- Agg.persistAndReturn(intermediateResultAgg) // implicit HasRepository for R
+      intermediateResultAgg: RawResult1[Double, Double] = demoCalc1(versionedDouble)
+      intermediateResult: VersionedData[Double] <- RawResult.persistAndReturn(intermediateResultAgg) // implicit HasRepository for R
       _ <- intermediateResultAgg.logInputs(intermediateResult.version) // implicit HasRepository for T1, T2
 
       versionedInt <- HasRepository[Int].hydrateLatestValid() // TODO want to run this async using applicative
 
       // TODO will bundle these 3 operations together, but here explicitly broken
-      resultAgg: Agg2[Int, Double, String] = demoCalc2(versionedInt, intermediateResult)
-      finalResult: VersionedData[String] <- Agg.persistAndReturn(resultAgg) // implicit HasRepository for R
+      resultAgg: RawResult2[Int, Double, String] = demoCalc2(versionedInt, intermediateResult)
+      finalResult: VersionedData[String] <- RawResult.persistAndReturn(resultAgg) // implicit HasRepository for R
       _ <- resultAgg.logInputs(finalResult.version) // implicit HasRepository for T1, T2
 
     } yield finalResult
