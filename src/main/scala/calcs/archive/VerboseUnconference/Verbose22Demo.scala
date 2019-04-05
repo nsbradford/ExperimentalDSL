@@ -1,8 +1,9 @@
-package calcs
+package calcs.archive.VerboseUnconference
 
-import SharedModel._
+import calcs.SharedModel._
+import calcs.archive.VerboseUnconference.Verbose22Imports._
+
 import scala.util.{Failure, Success, Try}
-import Verbose22Imports._
 
 object ImplicitRepositories {
 

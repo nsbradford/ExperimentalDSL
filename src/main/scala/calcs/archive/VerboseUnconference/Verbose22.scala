@@ -1,7 +1,8 @@
-package calcs
+package calcs.archive.VerboseUnconference
+
+import calcs.SharedModel._
 
 import scala.util.Try
-import SharedModel._
 
 
 object Verbose22Imports

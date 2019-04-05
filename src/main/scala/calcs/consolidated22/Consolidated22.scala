@@ -1,151 +1,8 @@
-package calcs
+package calcs.consolidated22
 
-import scala.util.{Failure, Success, Try}
-import SharedModel._
+import calcs.SharedModel._
 
-object GenerateConsolidatedText extends App {
-
-  (1 to 22).foreach{ i =>
-    val argTypeParams = (1 to i).map(x => s"T$x")
-    val argTypeParamStr = argTypeParams.mkString(", ")
-
-    val constructorArgs = {
-      val normalArgs = Seq("val name: String", "val calcRepository: CalcRepository", s"val f: ($argTypeParamStr) => R").mkString(",\n\t\t")
-      val inputHasRepositoryEv = (1 to i).map(x => s"ev$x: HasRepository[T$x]")
-      val implicitArgs = (s"implicit evR: HasRepository[R]" +: inputHasRepositoryEv).mkString(",\n\t\t")
-      s"(\n\t\t$normalArgs)\n\t\t($implicitArgs)"
-    }
-
-    val functionExtension = {
-      val argTypesVersioned = argTypeParams.map(t => s"VersionedData[$t]").mkString(", ")
-      s"Function$i[$argTypesVersioned, Try[VersionedData[R]]]"
-    }
-
-    val forLoopSteps = {
-      val calcVersionAssigned = "calcVersionAssigned <- this.calcRepository.requisitionNewRunId(this.fullyQualifiedName)"
-      val logOutput = "_ <- this.logOutput(calcVersionAssigned)(evR)"
-      val logInputs = (1 to i).map(x => s"_ <- this.logSingleInput(calcVersionAssigned)(vT$x)(ev$x)")
-      val pureFunctionArgs = argTypeParams.map(t => s"v$t.data").mkString(", ")
-      val pureResult = s"pureResult = f($pureFunctionArgs)"
-      val persistedResult = "persistedResult: VersionedData[R] <- this.evR.persistWrap(VersionedDataUnpersisted(pureResult, calcVersionAssigned))"
-      (
-        Seq(calcVersionAssigned, logOutput) ++
-          logInputs ++
-          Seq(pureResult, persistedResult)
-        ).mkString("\n\t\t\t")
-    }
-
-    val classBody = {
-      val applyArgs = argTypeParams.map(t => s"v$t: VersionedData[$t]").mkString(", ")
-      val applyBody = s"\n\t\tfor {\n\t\t\t$forLoopSteps\n\t\t} yield persistedResult"
-      s"\n\n\tfinal def apply($applyArgs): Try[VersionedData[R]] = {$applyBody\n\t}"
-    }
-
-    val typeParams = argTypeParamStr + ", R"
-    val calc = s"class Calc$i[$typeParams]$constructorArgs \n\textends $functionExtension\n\t\twith Calc[R] {$classBody\n}\n"
-    println(calc)
-
-    //  class Calc1[T1, R](val name: String,
-    //                     val f: (T1) => R,
-    //                     val calcRepository: CalcRepository)
-    //                     (implicit evR: HasRepository[R],
-    //                     ev1: HasRepository[T1])
-    //    extends Function1[VersionedData[T1], Try[VersionedData[R]]]
-    //      with Calc[R] {
-    //
-    //    final def apply(v1: VersionedData[T1]): Try[VersionedData[R]] = {
-    //      for {
-    //        calcVersionAssigned <- this.calcRepository.requisitionNewRunId(this.fullyQualifiedName)
-    //        _ <- this.logOutput(calcVersionAssigned)(evR)
-    //        _ <- this.logSingleInput(calcVersionAssigned)(v1)(ev1)
-    //        pureResult = f(v1.data)
-    //        persistedResult: VersionedData[R] <- this.evR.persistWrap(VersionedDataUnpersisted(pureResult, calcVersionAssigned))
-    //      } yield persistedResult
-    //    }
-    //  }
-  }
-}
-
-object DemoPersistenceContext {
-
-  implicit val DoubleHasRepository: HasRepository[Double] = new HasRepository[Double] {
-    override def dataConceptName = "Demo Double"
-    override def persist(t: VersionedDataUnpersisted[Double]): Try[Unit] = Try {
-      println(s"DataRepository > PERSIST > $dataConceptName >Version${t.version} with output data {${t.data}}")
-    }
-    override def hydrate(version: CalcVersionAssigned): Try[Double] = ???
-    override def hydrateLatestValid(): Try[VersionedData[Double]] = Try{
-      VersionedData[Double](0.5, CalcVersionAssigned(CalcName("Double-Hydrator"), 3423))
-    }
-  }
-  implicit val IntHasRepository: HasRepository[Int] = new HasRepository[Int] {
-    override def dataConceptName = "Demo Int"
-    override def persist(t: VersionedDataUnpersisted[Int]): Try[Unit] = ???
-    override def hydrate(version: CalcVersionAssigned): Try[Int] = ???
-    override def hydrateLatestValid(): Try[VersionedData[Int]] = Try{
-      VersionedData[Int](4, CalcVersionAssigned(CalcName("Int-Hydrator"), 3943))
-    }
-  }
-  implicit val StringHasRepository: HasRepository[String] = new HasRepository[String] {
-    override def dataConceptName = "Demo String"
-    override def persist(t: VersionedDataUnpersisted[String]): Try[Unit] = Try {
-      println(s"DataRepository > PERSIST > $dataConceptName >Version${t.version} with output data {${t.data}}")
-    }
-    override def hydrate(version: CalcVersionAssigned): Try[String] = ???
-    override def hydrateLatestValid(): Try[VersionedData[String]] = ???
-  }
-
-  class MockCalcRepository extends CalcRepository {
-
-    override def requisitionNewRunId(calcName: CalcName): Try[CalcVersionAssigned] = Try {
-      calcIdCounter = calcIdCounter + 1
-      CalcVersionAssigned(calcName, calcIdCounter)
-    }
-    private var calcIdCounter = 0
-
-    override def logInput[T : HasRepository](inputRecord: InputRecord[T]): Try[Unit] = Try {
-      println(s"CalcRepository > log INPUT > $inputRecord of type: {${HasRepository[T].fullName}}")
-    }
-
-    override def logOutput[T : HasRepository](outputRecord: OutputRecord[T]): Try[Unit] = Try {
-      println(s"CalcRepository > log OUTPUT > $outputRecord of type: {${HasRepository[T].fullName}}")
-    }
-  }
-  implicit val calcRepository: CalcRepository = new MockCalcRepository
-}
-
-
-object DemoConsolidated extends App {
-  import Consolidated22._
-  import DemoPersistenceContext._
-
-  val bizLogic1 = (d: Double) => d * 100d
-  val bizLogic2 = (i: Int, d: Double) => (i * d).toString
-
-  val demoCalc1: Calc1[Double, Double] = new Calc1("DemoCalc1-Doublex100", calcRepository, bizLogic1)
-  val demoCalc2: Calc2[Int, Double, String] = new Calc2("DemoCalc2-CombineIntDouble", calcRepository, bizLogic2)
-
-  /**
-    * A super-simple pipeline:
-    *
-    *   Hydrate[Double] => Calc1[Double] =>
-    *                                       Calc2[String]
-    *                       Hydrate[Int] =>
-    *
-    */
-  val finalVersionedResult: Try[VersionedData[String]] =
-    for {
-      versionedDouble: VersionedData[Double]    <- HasRepository[Double].hydrateLatestValid()
-      intermediateResult: VersionedData[Double] <- demoCalc1(versionedDouble)
-      versionedInt                              <- HasRepository[Int].hydrateLatestValid() // TODO run async w/ applicative
-      finalResult: VersionedData[String]        <- demoCalc2(versionedInt, intermediateResult)
-    } yield finalResult
-
-  finalVersionedResult match {
-    case Success(s) => println(s)
-    case Failure(e) => throw e
-  }
-}
+import scala.util.Try
 
 
 object Consolidated22 {
@@ -175,14 +32,12 @@ object Consolidated22 {
   //==============================================================================================================
   // STOP this is generated code
   //==============================================================================================================
-
-
-  class Calc1[T1, R](
-                      val name: String,
-                      val calcRepository: CalcRepository,
-                      val f: (T1) => R)
-                    (implicit evR: HasRepository[R],
-                     ev1: HasRepository[T1])
+  case class Calc1[T1, R](
+                           name: String,
+                           f: (T1) => R)
+                         (implicit val calcRepository: CalcRepository,
+                          evR: HasRepository[R],
+                          ev1: HasRepository[T1])
     extends Function1[VersionedData[T1], Try[VersionedData[R]]]
       with Calc[R] {
 
@@ -197,13 +52,13 @@ object Consolidated22 {
     }
   }
 
-  class Calc2[T1, T2, R](
-                          val name: String,
-                          val calcRepository: CalcRepository,
-                          val f: (T1, T2) => R)
-                        (implicit evR: HasRepository[R],
-                         ev1: HasRepository[T1],
-                         ev2: HasRepository[T2])
+  case class Calc2[T1, T2, R](
+                               name: String,
+                               f: (T1, T2) => R)
+                             (implicit val calcRepository: CalcRepository,
+                              evR: HasRepository[R],
+                              ev1: HasRepository[T1],
+                              ev2: HasRepository[T2])
     extends Function2[VersionedData[T1], VersionedData[T2], Try[VersionedData[R]]]
       with Calc[R] {
 
@@ -219,14 +74,14 @@ object Consolidated22 {
     }
   }
 
-  class Calc3[T1, T2, T3, R](
-                              val name: String,
-                              val calcRepository: CalcRepository,
-                              val f: (T1, T2, T3) => R)
-                            (implicit evR: HasRepository[R],
-                             ev1: HasRepository[T1],
-                             ev2: HasRepository[T2],
-                             ev3: HasRepository[T3])
+  case class Calc3[T1, T2, T3, R](
+                                   name: String,
+                                   f: (T1, T2, T3) => R)
+                                 (implicit val calcRepository: CalcRepository,
+                                  evR: HasRepository[R],
+                                  ev1: HasRepository[T1],
+                                  ev2: HasRepository[T2],
+                                  ev3: HasRepository[T3])
     extends Function3[VersionedData[T1], VersionedData[T2], VersionedData[T3], Try[VersionedData[R]]]
       with Calc[R] {
 
@@ -243,15 +98,15 @@ object Consolidated22 {
     }
   }
 
-  class Calc4[T1, T2, T3, T4, R](
-                                  val name: String,
-                                  val calcRepository: CalcRepository,
-                                  val f: (T1, T2, T3, T4) => R)
-                                (implicit evR: HasRepository[R],
-                                 ev1: HasRepository[T1],
-                                 ev2: HasRepository[T2],
-                                 ev3: HasRepository[T3],
-                                 ev4: HasRepository[T4])
+  case class Calc4[T1, T2, T3, T4, R](
+                                       name: String,
+                                       f: (T1, T2, T3, T4) => R)
+                                     (implicit val calcRepository: CalcRepository,
+                                      evR: HasRepository[R],
+                                      ev1: HasRepository[T1],
+                                      ev2: HasRepository[T2],
+                                      ev3: HasRepository[T3],
+                                      ev4: HasRepository[T4])
     extends Function4[VersionedData[T1], VersionedData[T2], VersionedData[T3], VersionedData[T4], Try[VersionedData[R]]]
       with Calc[R] {
 
@@ -269,16 +124,16 @@ object Consolidated22 {
     }
   }
 
-  class Calc5[T1, T2, T3, T4, T5, R](
-                                      val name: String,
-                                      val calcRepository: CalcRepository,
-                                      val f: (T1, T2, T3, T4, T5) => R)
-                                    (implicit evR: HasRepository[R],
-                                     ev1: HasRepository[T1],
-                                     ev2: HasRepository[T2],
-                                     ev3: HasRepository[T3],
-                                     ev4: HasRepository[T4],
-                                     ev5: HasRepository[T5])
+  case class Calc5[T1, T2, T3, T4, T5, R](
+                                           name: String,
+                                           f: (T1, T2, T3, T4, T5) => R)
+                                         (implicit val calcRepository: CalcRepository,
+                                          evR: HasRepository[R],
+                                          ev1: HasRepository[T1],
+                                          ev2: HasRepository[T2],
+                                          ev3: HasRepository[T3],
+                                          ev4: HasRepository[T4],
+                                          ev5: HasRepository[T5])
     extends Function5[VersionedData[T1], VersionedData[T2], VersionedData[T3], VersionedData[T4], VersionedData[T5], Try[VersionedData[R]]]
       with Calc[R] {
 
@@ -297,17 +152,17 @@ object Consolidated22 {
     }
   }
 
-  class Calc6[T1, T2, T3, T4, T5, T6, R](
-                                          val name: String,
-                                          val calcRepository: CalcRepository,
-                                          val f: (T1, T2, T3, T4, T5, T6) => R)
-                                        (implicit evR: HasRepository[R],
-                                         ev1: HasRepository[T1],
-                                         ev2: HasRepository[T2],
-                                         ev3: HasRepository[T3],
-                                         ev4: HasRepository[T4],
-                                         ev5: HasRepository[T5],
-                                         ev6: HasRepository[T6])
+  case class Calc6[T1, T2, T3, T4, T5, T6, R](
+                                               name: String,
+                                               f: (T1, T2, T3, T4, T5, T6) => R)
+                                             (implicit val calcRepository: CalcRepository,
+                                              evR: HasRepository[R],
+                                              ev1: HasRepository[T1],
+                                              ev2: HasRepository[T2],
+                                              ev3: HasRepository[T3],
+                                              ev4: HasRepository[T4],
+                                              ev5: HasRepository[T5],
+                                              ev6: HasRepository[T6])
     extends Function6[VersionedData[T1], VersionedData[T2], VersionedData[T3], VersionedData[T4], VersionedData[T5], VersionedData[T6], Try[VersionedData[R]]]
       with Calc[R] {
 
@@ -327,18 +182,18 @@ object Consolidated22 {
     }
   }
 
-  class Calc7[T1, T2, T3, T4, T5, T6, T7, R](
-                                              val name: String,
-                                              val calcRepository: CalcRepository,
-                                              val f: (T1, T2, T3, T4, T5, T6, T7) => R)
-                                            (implicit evR: HasRepository[R],
-                                             ev1: HasRepository[T1],
-                                             ev2: HasRepository[T2],
-                                             ev3: HasRepository[T3],
-                                             ev4: HasRepository[T4],
-                                             ev5: HasRepository[T5],
-                                             ev6: HasRepository[T6],
-                                             ev7: HasRepository[T7])
+  case class Calc7[T1, T2, T3, T4, T5, T6, T7, R](
+                                                   name: String,
+                                                   f: (T1, T2, T3, T4, T5, T6, T7) => R)
+                                                 (implicit val calcRepository: CalcRepository,
+                                                  evR: HasRepository[R],
+                                                  ev1: HasRepository[T1],
+                                                  ev2: HasRepository[T2],
+                                                  ev3: HasRepository[T3],
+                                                  ev4: HasRepository[T4],
+                                                  ev5: HasRepository[T5],
+                                                  ev6: HasRepository[T6],
+                                                  ev7: HasRepository[T7])
     extends Function7[VersionedData[T1], VersionedData[T2], VersionedData[T3], VersionedData[T4], VersionedData[T5], VersionedData[T6], VersionedData[T7], Try[VersionedData[R]]]
       with Calc[R] {
 
@@ -359,19 +214,19 @@ object Consolidated22 {
     }
   }
 
-  class Calc8[T1, T2, T3, T4, T5, T6, T7, T8, R](
-                                                  val name: String,
-                                                  val calcRepository: CalcRepository,
-                                                  val f: (T1, T2, T3, T4, T5, T6, T7, T8) => R)
-                                                (implicit evR: HasRepository[R],
-                                                 ev1: HasRepository[T1],
-                                                 ev2: HasRepository[T2],
-                                                 ev3: HasRepository[T3],
-                                                 ev4: HasRepository[T4],
-                                                 ev5: HasRepository[T5],
-                                                 ev6: HasRepository[T6],
-                                                 ev7: HasRepository[T7],
-                                                 ev8: HasRepository[T8])
+  case class Calc8[T1, T2, T3, T4, T5, T6, T7, T8, R](
+                                                       name: String,
+                                                       f: (T1, T2, T3, T4, T5, T6, T7, T8) => R)
+                                                     (implicit val calcRepository: CalcRepository,
+                                                      evR: HasRepository[R],
+                                                      ev1: HasRepository[T1],
+                                                      ev2: HasRepository[T2],
+                                                      ev3: HasRepository[T3],
+                                                      ev4: HasRepository[T4],
+                                                      ev5: HasRepository[T5],
+                                                      ev6: HasRepository[T6],
+                                                      ev7: HasRepository[T7],
+                                                      ev8: HasRepository[T8])
     extends Function8[VersionedData[T1], VersionedData[T2], VersionedData[T3], VersionedData[T4], VersionedData[T5], VersionedData[T6], VersionedData[T7], VersionedData[T8], Try[VersionedData[R]]]
       with Calc[R] {
 
@@ -393,20 +248,20 @@ object Consolidated22 {
     }
   }
 
-  class Calc9[T1, T2, T3, T4, T5, T6, T7, T8, T9, R](
-                                                      val name: String,
-                                                      val calcRepository: CalcRepository,
-                                                      val f: (T1, T2, T3, T4, T5, T6, T7, T8, T9) => R)
-                                                    (implicit evR: HasRepository[R],
-                                                     ev1: HasRepository[T1],
-                                                     ev2: HasRepository[T2],
-                                                     ev3: HasRepository[T3],
-                                                     ev4: HasRepository[T4],
-                                                     ev5: HasRepository[T5],
-                                                     ev6: HasRepository[T6],
-                                                     ev7: HasRepository[T7],
-                                                     ev8: HasRepository[T8],
-                                                     ev9: HasRepository[T9])
+  case class Calc9[T1, T2, T3, T4, T5, T6, T7, T8, T9, R](
+                                                           name: String,
+                                                           f: (T1, T2, T3, T4, T5, T6, T7, T8, T9) => R)
+                                                         (implicit val calcRepository: CalcRepository,
+                                                          evR: HasRepository[R],
+                                                          ev1: HasRepository[T1],
+                                                          ev2: HasRepository[T2],
+                                                          ev3: HasRepository[T3],
+                                                          ev4: HasRepository[T4],
+                                                          ev5: HasRepository[T5],
+                                                          ev6: HasRepository[T6],
+                                                          ev7: HasRepository[T7],
+                                                          ev8: HasRepository[T8],
+                                                          ev9: HasRepository[T9])
     extends Function9[VersionedData[T1], VersionedData[T2], VersionedData[T3], VersionedData[T4], VersionedData[T5], VersionedData[T6], VersionedData[T7], VersionedData[T8], VersionedData[T9], Try[VersionedData[R]]]
       with Calc[R] {
 
@@ -429,21 +284,21 @@ object Consolidated22 {
     }
   }
 
-  class Calc10[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, R](
-                                                            val name: String,
-                                                            val calcRepository: CalcRepository,
-                                                            val f: (T1, T2, T3, T4, T5, T6, T7, T8, T9, T10) => R)
-                                                          (implicit evR: HasRepository[R],
-                                                           ev1: HasRepository[T1],
-                                                           ev2: HasRepository[T2],
-                                                           ev3: HasRepository[T3],
-                                                           ev4: HasRepository[T4],
-                                                           ev5: HasRepository[T5],
-                                                           ev6: HasRepository[T6],
-                                                           ev7: HasRepository[T7],
-                                                           ev8: HasRepository[T8],
-                                                           ev9: HasRepository[T9],
-                                                           ev10: HasRepository[T10])
+  case class Calc10[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, R](
+                                                                 name: String,
+                                                                 f: (T1, T2, T3, T4, T5, T6, T7, T8, T9, T10) => R)
+                                                               (implicit val calcRepository: CalcRepository,
+                                                                evR: HasRepository[R],
+                                                                ev1: HasRepository[T1],
+                                                                ev2: HasRepository[T2],
+                                                                ev3: HasRepository[T3],
+                                                                ev4: HasRepository[T4],
+                                                                ev5: HasRepository[T5],
+                                                                ev6: HasRepository[T6],
+                                                                ev7: HasRepository[T7],
+                                                                ev8: HasRepository[T8],
+                                                                ev9: HasRepository[T9],
+                                                                ev10: HasRepository[T10])
     extends Function10[VersionedData[T1], VersionedData[T2], VersionedData[T3], VersionedData[T4], VersionedData[T5], VersionedData[T6], VersionedData[T7], VersionedData[T8], VersionedData[T9], VersionedData[T10], Try[VersionedData[R]]]
       with Calc[R] {
 
@@ -467,22 +322,22 @@ object Consolidated22 {
     }
   }
 
-  class Calc11[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, R](
-                                                                 val name: String,
-                                                                 val calcRepository: CalcRepository,
-                                                                 val f: (T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11) => R)
-                                                               (implicit evR: HasRepository[R],
-                                                                ev1: HasRepository[T1],
-                                                                ev2: HasRepository[T2],
-                                                                ev3: HasRepository[T3],
-                                                                ev4: HasRepository[T4],
-                                                                ev5: HasRepository[T5],
-                                                                ev6: HasRepository[T6],
-                                                                ev7: HasRepository[T7],
-                                                                ev8: HasRepository[T8],
-                                                                ev9: HasRepository[T9],
-                                                                ev10: HasRepository[T10],
-                                                                ev11: HasRepository[T11])
+  case class Calc11[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, R](
+                                                                      name: String,
+                                                                      f: (T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11) => R)
+                                                                    (implicit val calcRepository: CalcRepository,
+                                                                     evR: HasRepository[R],
+                                                                     ev1: HasRepository[T1],
+                                                                     ev2: HasRepository[T2],
+                                                                     ev3: HasRepository[T3],
+                                                                     ev4: HasRepository[T4],
+                                                                     ev5: HasRepository[T5],
+                                                                     ev6: HasRepository[T6],
+                                                                     ev7: HasRepository[T7],
+                                                                     ev8: HasRepository[T8],
+                                                                     ev9: HasRepository[T9],
+                                                                     ev10: HasRepository[T10],
+                                                                     ev11: HasRepository[T11])
     extends Function11[VersionedData[T1], VersionedData[T2], VersionedData[T3], VersionedData[T4], VersionedData[T5], VersionedData[T6], VersionedData[T7], VersionedData[T8], VersionedData[T9], VersionedData[T10], VersionedData[T11], Try[VersionedData[R]]]
       with Calc[R] {
 
@@ -507,23 +362,23 @@ object Consolidated22 {
     }
   }
 
-  class Calc12[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, R](
-                                                                      val name: String,
-                                                                      val calcRepository: CalcRepository,
-                                                                      val f: (T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12) => R)
-                                                                    (implicit evR: HasRepository[R],
-                                                                     ev1: HasRepository[T1],
-                                                                     ev2: HasRepository[T2],
-                                                                     ev3: HasRepository[T3],
-                                                                     ev4: HasRepository[T4],
-                                                                     ev5: HasRepository[T5],
-                                                                     ev6: HasRepository[T6],
-                                                                     ev7: HasRepository[T7],
-                                                                     ev8: HasRepository[T8],
-                                                                     ev9: HasRepository[T9],
-                                                                     ev10: HasRepository[T10],
-                                                                     ev11: HasRepository[T11],
-                                                                     ev12: HasRepository[T12])
+  case class Calc12[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, R](
+                                                                           name: String,
+                                                                           f: (T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12) => R)
+                                                                         (implicit val calcRepository: CalcRepository,
+                                                                          evR: HasRepository[R],
+                                                                          ev1: HasRepository[T1],
+                                                                          ev2: HasRepository[T2],
+                                                                          ev3: HasRepository[T3],
+                                                                          ev4: HasRepository[T4],
+                                                                          ev5: HasRepository[T5],
+                                                                          ev6: HasRepository[T6],
+                                                                          ev7: HasRepository[T7],
+                                                                          ev8: HasRepository[T8],
+                                                                          ev9: HasRepository[T9],
+                                                                          ev10: HasRepository[T10],
+                                                                          ev11: HasRepository[T11],
+                                                                          ev12: HasRepository[T12])
     extends Function12[VersionedData[T1], VersionedData[T2], VersionedData[T3], VersionedData[T4], VersionedData[T5], VersionedData[T6], VersionedData[T7], VersionedData[T8], VersionedData[T9], VersionedData[T10], VersionedData[T11], VersionedData[T12], Try[VersionedData[R]]]
       with Calc[R] {
 
@@ -549,24 +404,24 @@ object Consolidated22 {
     }
   }
 
-  class Calc13[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, R](
-                                                                           val name: String,
-                                                                           val calcRepository: CalcRepository,
-                                                                           val f: (T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13) => R)
-                                                                         (implicit evR: HasRepository[R],
-                                                                          ev1: HasRepository[T1],
-                                                                          ev2: HasRepository[T2],
-                                                                          ev3: HasRepository[T3],
-                                                                          ev4: HasRepository[T4],
-                                                                          ev5: HasRepository[T5],
-                                                                          ev6: HasRepository[T6],
-                                                                          ev7: HasRepository[T7],
-                                                                          ev8: HasRepository[T8],
-                                                                          ev9: HasRepository[T9],
-                                                                          ev10: HasRepository[T10],
-                                                                          ev11: HasRepository[T11],
-                                                                          ev12: HasRepository[T12],
-                                                                          ev13: HasRepository[T13])
+  case class Calc13[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, R](
+                                                                                name: String,
+                                                                                f: (T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13) => R)
+                                                                              (implicit val calcRepository: CalcRepository,
+                                                                               evR: HasRepository[R],
+                                                                               ev1: HasRepository[T1],
+                                                                               ev2: HasRepository[T2],
+                                                                               ev3: HasRepository[T3],
+                                                                               ev4: HasRepository[T4],
+                                                                               ev5: HasRepository[T5],
+                                                                               ev6: HasRepository[T6],
+                                                                               ev7: HasRepository[T7],
+                                                                               ev8: HasRepository[T8],
+                                                                               ev9: HasRepository[T9],
+                                                                               ev10: HasRepository[T10],
+                                                                               ev11: HasRepository[T11],
+                                                                               ev12: HasRepository[T12],
+                                                                               ev13: HasRepository[T13])
     extends Function13[VersionedData[T1], VersionedData[T2], VersionedData[T3], VersionedData[T4], VersionedData[T5], VersionedData[T6], VersionedData[T7], VersionedData[T8], VersionedData[T9], VersionedData[T10], VersionedData[T11], VersionedData[T12], VersionedData[T13], Try[VersionedData[R]]]
       with Calc[R] {
 
@@ -593,25 +448,25 @@ object Consolidated22 {
     }
   }
 
-  class Calc14[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, R](
-                                                                                val name: String,
-                                                                                val calcRepository: CalcRepository,
-                                                                                val f: (T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14) => R)
-                                                                              (implicit evR: HasRepository[R],
-                                                                               ev1: HasRepository[T1],
-                                                                               ev2: HasRepository[T2],
-                                                                               ev3: HasRepository[T3],
-                                                                               ev4: HasRepository[T4],
-                                                                               ev5: HasRepository[T5],
-                                                                               ev6: HasRepository[T6],
-                                                                               ev7: HasRepository[T7],
-                                                                               ev8: HasRepository[T8],
-                                                                               ev9: HasRepository[T9],
-                                                                               ev10: HasRepository[T10],
-                                                                               ev11: HasRepository[T11],
-                                                                               ev12: HasRepository[T12],
-                                                                               ev13: HasRepository[T13],
-                                                                               ev14: HasRepository[T14])
+  case class Calc14[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, R](
+                                                                                     name: String,
+                                                                                     f: (T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14) => R)
+                                                                                   (implicit val calcRepository: CalcRepository,
+                                                                                    evR: HasRepository[R],
+                                                                                    ev1: HasRepository[T1],
+                                                                                    ev2: HasRepository[T2],
+                                                                                    ev3: HasRepository[T3],
+                                                                                    ev4: HasRepository[T4],
+                                                                                    ev5: HasRepository[T5],
+                                                                                    ev6: HasRepository[T6],
+                                                                                    ev7: HasRepository[T7],
+                                                                                    ev8: HasRepository[T8],
+                                                                                    ev9: HasRepository[T9],
+                                                                                    ev10: HasRepository[T10],
+                                                                                    ev11: HasRepository[T11],
+                                                                                    ev12: HasRepository[T12],
+                                                                                    ev13: HasRepository[T13],
+                                                                                    ev14: HasRepository[T14])
     extends Function14[VersionedData[T1], VersionedData[T2], VersionedData[T3], VersionedData[T4], VersionedData[T5], VersionedData[T6], VersionedData[T7], VersionedData[T8], VersionedData[T9], VersionedData[T10], VersionedData[T11], VersionedData[T12], VersionedData[T13], VersionedData[T14], Try[VersionedData[R]]]
       with Calc[R] {
 
@@ -639,26 +494,26 @@ object Consolidated22 {
     }
   }
 
-  class Calc15[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, R](
-                                                                                     val name: String,
-                                                                                     val calcRepository: CalcRepository,
-                                                                                     val f: (T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15) => R)
-                                                                                   (implicit evR: HasRepository[R],
-                                                                                    ev1: HasRepository[T1],
-                                                                                    ev2: HasRepository[T2],
-                                                                                    ev3: HasRepository[T3],
-                                                                                    ev4: HasRepository[T4],
-                                                                                    ev5: HasRepository[T5],
-                                                                                    ev6: HasRepository[T6],
-                                                                                    ev7: HasRepository[T7],
-                                                                                    ev8: HasRepository[T8],
-                                                                                    ev9: HasRepository[T9],
-                                                                                    ev10: HasRepository[T10],
-                                                                                    ev11: HasRepository[T11],
-                                                                                    ev12: HasRepository[T12],
-                                                                                    ev13: HasRepository[T13],
-                                                                                    ev14: HasRepository[T14],
-                                                                                    ev15: HasRepository[T15])
+  case class Calc15[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, R](
+                                                                                          name: String,
+                                                                                          f: (T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15) => R)
+                                                                                        (implicit val calcRepository: CalcRepository,
+                                                                                         evR: HasRepository[R],
+                                                                                         ev1: HasRepository[T1],
+                                                                                         ev2: HasRepository[T2],
+                                                                                         ev3: HasRepository[T3],
+                                                                                         ev4: HasRepository[T4],
+                                                                                         ev5: HasRepository[T5],
+                                                                                         ev6: HasRepository[T6],
+                                                                                         ev7: HasRepository[T7],
+                                                                                         ev8: HasRepository[T8],
+                                                                                         ev9: HasRepository[T9],
+                                                                                         ev10: HasRepository[T10],
+                                                                                         ev11: HasRepository[T11],
+                                                                                         ev12: HasRepository[T12],
+                                                                                         ev13: HasRepository[T13],
+                                                                                         ev14: HasRepository[T14],
+                                                                                         ev15: HasRepository[T15])
     extends Function15[VersionedData[T1], VersionedData[T2], VersionedData[T3], VersionedData[T4], VersionedData[T5], VersionedData[T6], VersionedData[T7], VersionedData[T8], VersionedData[T9], VersionedData[T10], VersionedData[T11], VersionedData[T12], VersionedData[T13], VersionedData[T14], VersionedData[T15], Try[VersionedData[R]]]
       with Calc[R] {
 
@@ -687,27 +542,27 @@ object Consolidated22 {
     }
   }
 
-  class Calc16[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, R](
-                                                                                          val name: String,
-                                                                                          val calcRepository: CalcRepository,
-                                                                                          val f: (T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16) => R)
-                                                                                        (implicit evR: HasRepository[R],
-                                                                                         ev1: HasRepository[T1],
-                                                                                         ev2: HasRepository[T2],
-                                                                                         ev3: HasRepository[T3],
-                                                                                         ev4: HasRepository[T4],
-                                                                                         ev5: HasRepository[T5],
-                                                                                         ev6: HasRepository[T6],
-                                                                                         ev7: HasRepository[T7],
-                                                                                         ev8: HasRepository[T8],
-                                                                                         ev9: HasRepository[T9],
-                                                                                         ev10: HasRepository[T10],
-                                                                                         ev11: HasRepository[T11],
-                                                                                         ev12: HasRepository[T12],
-                                                                                         ev13: HasRepository[T13],
-                                                                                         ev14: HasRepository[T14],
-                                                                                         ev15: HasRepository[T15],
-                                                                                         ev16: HasRepository[T16])
+  case class Calc16[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, R](
+                                                                                               name: String,
+                                                                                               f: (T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16) => R)
+                                                                                             (implicit val calcRepository: CalcRepository,
+                                                                                              evR: HasRepository[R],
+                                                                                              ev1: HasRepository[T1],
+                                                                                              ev2: HasRepository[T2],
+                                                                                              ev3: HasRepository[T3],
+                                                                                              ev4: HasRepository[T4],
+                                                                                              ev5: HasRepository[T5],
+                                                                                              ev6: HasRepository[T6],
+                                                                                              ev7: HasRepository[T7],
+                                                                                              ev8: HasRepository[T8],
+                                                                                              ev9: HasRepository[T9],
+                                                                                              ev10: HasRepository[T10],
+                                                                                              ev11: HasRepository[T11],
+                                                                                              ev12: HasRepository[T12],
+                                                                                              ev13: HasRepository[T13],
+                                                                                              ev14: HasRepository[T14],
+                                                                                              ev15: HasRepository[T15],
+                                                                                              ev16: HasRepository[T16])
     extends Function16[VersionedData[T1], VersionedData[T2], VersionedData[T3], VersionedData[T4], VersionedData[T5], VersionedData[T6], VersionedData[T7], VersionedData[T8], VersionedData[T9], VersionedData[T10], VersionedData[T11], VersionedData[T12], VersionedData[T13], VersionedData[T14], VersionedData[T15], VersionedData[T16], Try[VersionedData[R]]]
       with Calc[R] {
 
@@ -737,28 +592,28 @@ object Consolidated22 {
     }
   }
 
-  class Calc17[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, R](
-                                                                                               val name: String,
-                                                                                               val calcRepository: CalcRepository,
-                                                                                               val f: (T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17) => R)
-                                                                                             (implicit evR: HasRepository[R],
-                                                                                              ev1: HasRepository[T1],
-                                                                                              ev2: HasRepository[T2],
-                                                                                              ev3: HasRepository[T3],
-                                                                                              ev4: HasRepository[T4],
-                                                                                              ev5: HasRepository[T5],
-                                                                                              ev6: HasRepository[T6],
-                                                                                              ev7: HasRepository[T7],
-                                                                                              ev8: HasRepository[T8],
-                                                                                              ev9: HasRepository[T9],
-                                                                                              ev10: HasRepository[T10],
-                                                                                              ev11: HasRepository[T11],
-                                                                                              ev12: HasRepository[T12],
-                                                                                              ev13: HasRepository[T13],
-                                                                                              ev14: HasRepository[T14],
-                                                                                              ev15: HasRepository[T15],
-                                                                                              ev16: HasRepository[T16],
-                                                                                              ev17: HasRepository[T17])
+  case class Calc17[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, R](
+                                                                                                    name: String,
+                                                                                                    f: (T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17) => R)
+                                                                                                  (implicit val calcRepository: CalcRepository,
+                                                                                                   evR: HasRepository[R],
+                                                                                                   ev1: HasRepository[T1],
+                                                                                                   ev2: HasRepository[T2],
+                                                                                                   ev3: HasRepository[T3],
+                                                                                                   ev4: HasRepository[T4],
+                                                                                                   ev5: HasRepository[T5],
+                                                                                                   ev6: HasRepository[T6],
+                                                                                                   ev7: HasRepository[T7],
+                                                                                                   ev8: HasRepository[T8],
+                                                                                                   ev9: HasRepository[T9],
+                                                                                                   ev10: HasRepository[T10],
+                                                                                                   ev11: HasRepository[T11],
+                                                                                                   ev12: HasRepository[T12],
+                                                                                                   ev13: HasRepository[T13],
+                                                                                                   ev14: HasRepository[T14],
+                                                                                                   ev15: HasRepository[T15],
+                                                                                                   ev16: HasRepository[T16],
+                                                                                                   ev17: HasRepository[T17])
     extends Function17[VersionedData[T1], VersionedData[T2], VersionedData[T3], VersionedData[T4], VersionedData[T5], VersionedData[T6], VersionedData[T7], VersionedData[T8], VersionedData[T9], VersionedData[T10], VersionedData[T11], VersionedData[T12], VersionedData[T13], VersionedData[T14], VersionedData[T15], VersionedData[T16], VersionedData[T17], Try[VersionedData[R]]]
       with Calc[R] {
 
@@ -789,29 +644,29 @@ object Consolidated22 {
     }
   }
 
-  class Calc18[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, R](
-                                                                                                    val name: String,
-                                                                                                    val calcRepository: CalcRepository,
-                                                                                                    val f: (T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18) => R)
-                                                                                                  (implicit evR: HasRepository[R],
-                                                                                                   ev1: HasRepository[T1],
-                                                                                                   ev2: HasRepository[T2],
-                                                                                                   ev3: HasRepository[T3],
-                                                                                                   ev4: HasRepository[T4],
-                                                                                                   ev5: HasRepository[T5],
-                                                                                                   ev6: HasRepository[T6],
-                                                                                                   ev7: HasRepository[T7],
-                                                                                                   ev8: HasRepository[T8],
-                                                                                                   ev9: HasRepository[T9],
-                                                                                                   ev10: HasRepository[T10],
-                                                                                                   ev11: HasRepository[T11],
-                                                                                                   ev12: HasRepository[T12],
-                                                                                                   ev13: HasRepository[T13],
-                                                                                                   ev14: HasRepository[T14],
-                                                                                                   ev15: HasRepository[T15],
-                                                                                                   ev16: HasRepository[T16],
-                                                                                                   ev17: HasRepository[T17],
-                                                                                                   ev18: HasRepository[T18])
+  case class Calc18[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, R](
+                                                                                                         name: String,
+                                                                                                         f: (T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18) => R)
+                                                                                                       (implicit val calcRepository: CalcRepository,
+                                                                                                        evR: HasRepository[R],
+                                                                                                        ev1: HasRepository[T1],
+                                                                                                        ev2: HasRepository[T2],
+                                                                                                        ev3: HasRepository[T3],
+                                                                                                        ev4: HasRepository[T4],
+                                                                                                        ev5: HasRepository[T5],
+                                                                                                        ev6: HasRepository[T6],
+                                                                                                        ev7: HasRepository[T7],
+                                                                                                        ev8: HasRepository[T8],
+                                                                                                        ev9: HasRepository[T9],
+                                                                                                        ev10: HasRepository[T10],
+                                                                                                        ev11: HasRepository[T11],
+                                                                                                        ev12: HasRepository[T12],
+                                                                                                        ev13: HasRepository[T13],
+                                                                                                        ev14: HasRepository[T14],
+                                                                                                        ev15: HasRepository[T15],
+                                                                                                        ev16: HasRepository[T16],
+                                                                                                        ev17: HasRepository[T17],
+                                                                                                        ev18: HasRepository[T18])
     extends Function18[VersionedData[T1], VersionedData[T2], VersionedData[T3], VersionedData[T4], VersionedData[T5], VersionedData[T6], VersionedData[T7], VersionedData[T8], VersionedData[T9], VersionedData[T10], VersionedData[T11], VersionedData[T12], VersionedData[T13], VersionedData[T14], VersionedData[T15], VersionedData[T16], VersionedData[T17], VersionedData[T18], Try[VersionedData[R]]]
       with Calc[R] {
 
@@ -843,30 +698,30 @@ object Consolidated22 {
     }
   }
 
-  class Calc19[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, R](
-                                                                                                         val name: String,
-                                                                                                         val calcRepository: CalcRepository,
-                                                                                                         val f: (T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19) => R)
-                                                                                                       (implicit evR: HasRepository[R],
-                                                                                                        ev1: HasRepository[T1],
-                                                                                                        ev2: HasRepository[T2],
-                                                                                                        ev3: HasRepository[T3],
-                                                                                                        ev4: HasRepository[T4],
-                                                                                                        ev5: HasRepository[T5],
-                                                                                                        ev6: HasRepository[T6],
-                                                                                                        ev7: HasRepository[T7],
-                                                                                                        ev8: HasRepository[T8],
-                                                                                                        ev9: HasRepository[T9],
-                                                                                                        ev10: HasRepository[T10],
-                                                                                                        ev11: HasRepository[T11],
-                                                                                                        ev12: HasRepository[T12],
-                                                                                                        ev13: HasRepository[T13],
-                                                                                                        ev14: HasRepository[T14],
-                                                                                                        ev15: HasRepository[T15],
-                                                                                                        ev16: HasRepository[T16],
-                                                                                                        ev17: HasRepository[T17],
-                                                                                                        ev18: HasRepository[T18],
-                                                                                                        ev19: HasRepository[T19])
+  case class Calc19[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, R](
+                                                                                                              name: String,
+                                                                                                              f: (T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19) => R)
+                                                                                                            (implicit val calcRepository: CalcRepository,
+                                                                                                             evR: HasRepository[R],
+                                                                                                             ev1: HasRepository[T1],
+                                                                                                             ev2: HasRepository[T2],
+                                                                                                             ev3: HasRepository[T3],
+                                                                                                             ev4: HasRepository[T4],
+                                                                                                             ev5: HasRepository[T5],
+                                                                                                             ev6: HasRepository[T6],
+                                                                                                             ev7: HasRepository[T7],
+                                                                                                             ev8: HasRepository[T8],
+                                                                                                             ev9: HasRepository[T9],
+                                                                                                             ev10: HasRepository[T10],
+                                                                                                             ev11: HasRepository[T11],
+                                                                                                             ev12: HasRepository[T12],
+                                                                                                             ev13: HasRepository[T13],
+                                                                                                             ev14: HasRepository[T14],
+                                                                                                             ev15: HasRepository[T15],
+                                                                                                             ev16: HasRepository[T16],
+                                                                                                             ev17: HasRepository[T17],
+                                                                                                             ev18: HasRepository[T18],
+                                                                                                             ev19: HasRepository[T19])
     extends Function19[VersionedData[T1], VersionedData[T2], VersionedData[T3], VersionedData[T4], VersionedData[T5], VersionedData[T6], VersionedData[T7], VersionedData[T8], VersionedData[T9], VersionedData[T10], VersionedData[T11], VersionedData[T12], VersionedData[T13], VersionedData[T14], VersionedData[T15], VersionedData[T16], VersionedData[T17], VersionedData[T18], VersionedData[T19], Try[VersionedData[R]]]
       with Calc[R] {
 
@@ -899,31 +754,31 @@ object Consolidated22 {
     }
   }
 
-  class Calc20[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, R](
-                                                                                                              val name: String,
-                                                                                                              val calcRepository: CalcRepository,
-                                                                                                              val f: (T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20) => R)
-                                                                                                            (implicit evR: HasRepository[R],
-                                                                                                             ev1: HasRepository[T1],
-                                                                                                             ev2: HasRepository[T2],
-                                                                                                             ev3: HasRepository[T3],
-                                                                                                             ev4: HasRepository[T4],
-                                                                                                             ev5: HasRepository[T5],
-                                                                                                             ev6: HasRepository[T6],
-                                                                                                             ev7: HasRepository[T7],
-                                                                                                             ev8: HasRepository[T8],
-                                                                                                             ev9: HasRepository[T9],
-                                                                                                             ev10: HasRepository[T10],
-                                                                                                             ev11: HasRepository[T11],
-                                                                                                             ev12: HasRepository[T12],
-                                                                                                             ev13: HasRepository[T13],
-                                                                                                             ev14: HasRepository[T14],
-                                                                                                             ev15: HasRepository[T15],
-                                                                                                             ev16: HasRepository[T16],
-                                                                                                             ev17: HasRepository[T17],
-                                                                                                             ev18: HasRepository[T18],
-                                                                                                             ev19: HasRepository[T19],
-                                                                                                             ev20: HasRepository[T20])
+  case class Calc20[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, R](
+                                                                                                                   name: String,
+                                                                                                                   f: (T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20) => R)
+                                                                                                                 (implicit val calcRepository: CalcRepository,
+                                                                                                                  evR: HasRepository[R],
+                                                                                                                  ev1: HasRepository[T1],
+                                                                                                                  ev2: HasRepository[T2],
+                                                                                                                  ev3: HasRepository[T3],
+                                                                                                                  ev4: HasRepository[T4],
+                                                                                                                  ev5: HasRepository[T5],
+                                                                                                                  ev6: HasRepository[T6],
+                                                                                                                  ev7: HasRepository[T7],
+                                                                                                                  ev8: HasRepository[T8],
+                                                                                                                  ev9: HasRepository[T9],
+                                                                                                                  ev10: HasRepository[T10],
+                                                                                                                  ev11: HasRepository[T11],
+                                                                                                                  ev12: HasRepository[T12],
+                                                                                                                  ev13: HasRepository[T13],
+                                                                                                                  ev14: HasRepository[T14],
+                                                                                                                  ev15: HasRepository[T15],
+                                                                                                                  ev16: HasRepository[T16],
+                                                                                                                  ev17: HasRepository[T17],
+                                                                                                                  ev18: HasRepository[T18],
+                                                                                                                  ev19: HasRepository[T19],
+                                                                                                                  ev20: HasRepository[T20])
     extends Function20[VersionedData[T1], VersionedData[T2], VersionedData[T3], VersionedData[T4], VersionedData[T5], VersionedData[T6], VersionedData[T7], VersionedData[T8], VersionedData[T9], VersionedData[T10], VersionedData[T11], VersionedData[T12], VersionedData[T13], VersionedData[T14], VersionedData[T15], VersionedData[T16], VersionedData[T17], VersionedData[T18], VersionedData[T19], VersionedData[T20], Try[VersionedData[R]]]
       with Calc[R] {
 
@@ -957,32 +812,32 @@ object Consolidated22 {
     }
   }
 
-  class Calc21[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, R](
-                                                                                                                   val name: String,
-                                                                                                                   val calcRepository: CalcRepository,
-                                                                                                                   val f: (T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21) => R)
-                                                                                                                 (implicit evR: HasRepository[R],
-                                                                                                                  ev1: HasRepository[T1],
-                                                                                                                  ev2: HasRepository[T2],
-                                                                                                                  ev3: HasRepository[T3],
-                                                                                                                  ev4: HasRepository[T4],
-                                                                                                                  ev5: HasRepository[T5],
-                                                                                                                  ev6: HasRepository[T6],
-                                                                                                                  ev7: HasRepository[T7],
-                                                                                                                  ev8: HasRepository[T8],
-                                                                                                                  ev9: HasRepository[T9],
-                                                                                                                  ev10: HasRepository[T10],
-                                                                                                                  ev11: HasRepository[T11],
-                                                                                                                  ev12: HasRepository[T12],
-                                                                                                                  ev13: HasRepository[T13],
-                                                                                                                  ev14: HasRepository[T14],
-                                                                                                                  ev15: HasRepository[T15],
-                                                                                                                  ev16: HasRepository[T16],
-                                                                                                                  ev17: HasRepository[T17],
-                                                                                                                  ev18: HasRepository[T18],
-                                                                                                                  ev19: HasRepository[T19],
-                                                                                                                  ev20: HasRepository[T20],
-                                                                                                                  ev21: HasRepository[T21])
+  case class Calc21[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, R](
+                                                                                                                        name: String,
+                                                                                                                        f: (T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21) => R)
+                                                                                                                      (implicit val calcRepository: CalcRepository,
+                                                                                                                       evR: HasRepository[R],
+                                                                                                                       ev1: HasRepository[T1],
+                                                                                                                       ev2: HasRepository[T2],
+                                                                                                                       ev3: HasRepository[T3],
+                                                                                                                       ev4: HasRepository[T4],
+                                                                                                                       ev5: HasRepository[T5],
+                                                                                                                       ev6: HasRepository[T6],
+                                                                                                                       ev7: HasRepository[T7],
+                                                                                                                       ev8: HasRepository[T8],
+                                                                                                                       ev9: HasRepository[T9],
+                                                                                                                       ev10: HasRepository[T10],
+                                                                                                                       ev11: HasRepository[T11],
+                                                                                                                       ev12: HasRepository[T12],
+                                                                                                                       ev13: HasRepository[T13],
+                                                                                                                       ev14: HasRepository[T14],
+                                                                                                                       ev15: HasRepository[T15],
+                                                                                                                       ev16: HasRepository[T16],
+                                                                                                                       ev17: HasRepository[T17],
+                                                                                                                       ev18: HasRepository[T18],
+                                                                                                                       ev19: HasRepository[T19],
+                                                                                                                       ev20: HasRepository[T20],
+                                                                                                                       ev21: HasRepository[T21])
     extends Function21[VersionedData[T1], VersionedData[T2], VersionedData[T3], VersionedData[T4], VersionedData[T5], VersionedData[T6], VersionedData[T7], VersionedData[T8], VersionedData[T9], VersionedData[T10], VersionedData[T11], VersionedData[T12], VersionedData[T13], VersionedData[T14], VersionedData[T15], VersionedData[T16], VersionedData[T17], VersionedData[T18], VersionedData[T19], VersionedData[T20], VersionedData[T21], Try[VersionedData[R]]]
       with Calc[R] {
 
@@ -1017,33 +872,33 @@ object Consolidated22 {
     }
   }
 
-  class Calc22[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, R](
-                                                                                                                        val name: String,
-                                                                                                                        val calcRepository: CalcRepository,
-                                                                                                                        val f: (T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22) => R)
-                                                                                                                      (implicit evR: HasRepository[R],
-                                                                                                                       ev1: HasRepository[T1],
-                                                                                                                       ev2: HasRepository[T2],
-                                                                                                                       ev3: HasRepository[T3],
-                                                                                                                       ev4: HasRepository[T4],
-                                                                                                                       ev5: HasRepository[T5],
-                                                                                                                       ev6: HasRepository[T6],
-                                                                                                                       ev7: HasRepository[T7],
-                                                                                                                       ev8: HasRepository[T8],
-                                                                                                                       ev9: HasRepository[T9],
-                                                                                                                       ev10: HasRepository[T10],
-                                                                                                                       ev11: HasRepository[T11],
-                                                                                                                       ev12: HasRepository[T12],
-                                                                                                                       ev13: HasRepository[T13],
-                                                                                                                       ev14: HasRepository[T14],
-                                                                                                                       ev15: HasRepository[T15],
-                                                                                                                       ev16: HasRepository[T16],
-                                                                                                                       ev17: HasRepository[T17],
-                                                                                                                       ev18: HasRepository[T18],
-                                                                                                                       ev19: HasRepository[T19],
-                                                                                                                       ev20: HasRepository[T20],
-                                                                                                                       ev21: HasRepository[T21],
-                                                                                                                       ev22: HasRepository[T22])
+  case class Calc22[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, R](
+                                                                                                                             name: String,
+                                                                                                                             f: (T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22) => R)
+                                                                                                                           (implicit val calcRepository: CalcRepository,
+                                                                                                                            evR: HasRepository[R],
+                                                                                                                            ev1: HasRepository[T1],
+                                                                                                                            ev2: HasRepository[T2],
+                                                                                                                            ev3: HasRepository[T3],
+                                                                                                                            ev4: HasRepository[T4],
+                                                                                                                            ev5: HasRepository[T5],
+                                                                                                                            ev6: HasRepository[T6],
+                                                                                                                            ev7: HasRepository[T7],
+                                                                                                                            ev8: HasRepository[T8],
+                                                                                                                            ev9: HasRepository[T9],
+                                                                                                                            ev10: HasRepository[T10],
+                                                                                                                            ev11: HasRepository[T11],
+                                                                                                                            ev12: HasRepository[T12],
+                                                                                                                            ev13: HasRepository[T13],
+                                                                                                                            ev14: HasRepository[T14],
+                                                                                                                            ev15: HasRepository[T15],
+                                                                                                                            ev16: HasRepository[T16],
+                                                                                                                            ev17: HasRepository[T17],
+                                                                                                                            ev18: HasRepository[T18],
+                                                                                                                            ev19: HasRepository[T19],
+                                                                                                                            ev20: HasRepository[T20],
+                                                                                                                            ev21: HasRepository[T21],
+                                                                                                                            ev22: HasRepository[T22])
     extends Function22[VersionedData[T1], VersionedData[T2], VersionedData[T3], VersionedData[T4], VersionedData[T5], VersionedData[T6], VersionedData[T7], VersionedData[T8], VersionedData[T9], VersionedData[T10], VersionedData[T11], VersionedData[T12], VersionedData[T13], VersionedData[T14], VersionedData[T15], VersionedData[T16], VersionedData[T17], VersionedData[T18], VersionedData[T19], VersionedData[T20], VersionedData[T21], VersionedData[T22], Try[VersionedData[R]]]
       with Calc[R] {
 
@@ -1080,4 +935,68 @@ object Consolidated22 {
   }
 
 
+
+}
+
+object GenerateConsolidatedText extends App {
+
+  (1 to 22).foreach{ i =>
+    val argTypeParams = (1 to i).map(x => s"T$x")
+    val argTypeParamStr = argTypeParams.mkString(", ")
+
+    val constructorArgs = {
+      val normalArgs = Seq("name: String", s"f: ($argTypeParamStr) => R").mkString(",\n\t\t")
+      val inputHasRepositoryEv = (1 to i).map(x => s"ev$x: HasRepository[T$x]")
+      val implicitArgs = (Seq(s"implicit val calcRepository: CalcRepository", "evR: HasRepository[R]") ++ inputHasRepositoryEv).mkString(",\n\t\t")
+      s"(\n\t\t$normalArgs)\n\t\t($implicitArgs)"
+    }
+
+    val functionExtension = {
+      val argTypesVersioned = argTypeParams.map(t => s"VersionedData[$t]").mkString(", ")
+      s"Function$i[$argTypesVersioned, Try[VersionedData[R]]]"
+    }
+
+    val forLoopSteps = {
+      val calcVersionAssigned = "calcVersionAssigned <- this.calcRepository.requisitionNewRunId(this.fullyQualifiedName)"
+      val logOutput = "_ <- this.logOutput(calcVersionAssigned)(evR)"
+      val logInputs = (1 to i).map(x => s"_ <- this.logSingleInput(calcVersionAssigned)(vT$x)(ev$x)")
+      val pureFunctionArgs = argTypeParams.map(t => s"v$t.data").mkString(", ")
+      val pureResult = s"pureResult = f($pureFunctionArgs)"
+      val persistedResult = "persistedResult: VersionedData[R] <- this.evR.persistWrap(VersionedDataUnpersisted(pureResult, calcVersionAssigned))"
+      (
+        Seq(calcVersionAssigned, logOutput) ++
+          logInputs ++
+          Seq(pureResult, persistedResult)
+        ).mkString("\n\t\t\t")
+    }
+
+    val classBody = {
+      val applyArgs = argTypeParams.map(t => s"v$t: VersionedData[$t]").mkString(", ")
+      val applyBody = s"\n\t\tfor {\n\t\t\t$forLoopSteps\n\t\t} yield persistedResult"
+      s"\n\n\tfinal def apply($applyArgs): Try[VersionedData[R]] = {$applyBody\n\t}"
+    }
+
+    val typeParams = argTypeParamStr + ", R"
+    val calc = s"case class Calc$i[$typeParams]$constructorArgs \n\textends $functionExtension\n\t\twith Calc[R] {$classBody\n}\n"
+    println(calc)
+
+    //  class Calc1[T1, R](val name: String,
+    //                     val f: (T1) => R,
+    //                     val calcRepository: CalcRepository)
+    //                     (implicit evR: HasRepository[R],
+    //                     ev1: HasRepository[T1])
+    //    extends Function1[VersionedData[T1], Try[VersionedData[R]]]
+    //      with Calc[R] {
+    //
+    //    final def apply(v1: VersionedData[T1]): Try[VersionedData[R]] = {
+    //      for {
+    //        calcVersionAssigned <- this.calcRepository.requisitionNewRunId(this.fullyQualifiedName)
+    //        _ <- this.logOutput(calcVersionAssigned)(evR)
+    //        _ <- this.logSingleInput(calcVersionAssigned)(v1)(ev1)
+    //        pureResult = f(v1.data)
+    //        persistedResult: VersionedData[R] <- this.evR.persistWrap(VersionedDataUnpersisted(pureResult, calcVersionAssigned))
+    //      } yield persistedResult
+    //    }
+    //  }
+  }
 }

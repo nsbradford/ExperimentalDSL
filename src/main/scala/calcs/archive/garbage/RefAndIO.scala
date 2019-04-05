@@ -1,5 +1,4 @@
-package calcs
-
+package calcs.archive.garbage
 
 import cats.effect._
 import cats.effect.concurrent.Ref
