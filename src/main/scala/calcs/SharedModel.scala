@@ -11,9 +11,13 @@ trait SharedModel {
   trait HasRepository[T]{
     final def fullName: String = s"$dataConceptName: ${this.getClass.getName}" // eliminates collisions
     def dataConceptName: String // TODO not sure if we should keep this as part of interface
-    def persist(t: VersionedDataUnpersisted[T]): Try[Unit]
+    protected def persist(t: VersionedDataUnpersisted[T]): Try[Unit] // just returns the same data
     def hydrate(version: CalcVersionAssigned): Try[T]
     def hydrateLatestValid(): Try[VersionedData[T]]
+
+    final def persistWrap(t: VersionedDataUnpersisted[T]): Try[VersionedData[T]] = {
+      for (_ <- this.persist(t)) yield t.toPersisted
+    }
   }
 
   object HasRepository {
@@ -36,7 +40,9 @@ trait SharedModel {
   //  trait DataWithVersion
   case class VersionedData[+T](data: T, version: CalcVersionAssigned)
   case class UnversionedData[+T](data: T, version: CalcUnversioned)
-  case class VersionedDataUnpersisted[+T](data: T, version: CalcVersionAssigned)
+  case class VersionedDataUnpersisted[+T](data: T, version: CalcVersionAssigned) {
+    def toPersisted: VersionedData[T] = VersionedData(data, version)
+  }
 
   /**
     * Metadata records:

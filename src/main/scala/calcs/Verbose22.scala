@@ -52,7 +52,7 @@ trait Verbose22 extends SharedModel {
   /**
     * Calculators have an internal Aggregator of
     */
-  sealed trait RawResult[+R]{
+  sealed trait RawResult[+R]{ // TODO these are only used in teh RawResult companion object
     def r: UnversionedData[R]
     final def source: CalcUnversioned = r.version
   }
@@ -67,8 +67,8 @@ trait Verbose22 extends SharedModel {
       for {
         newCalcId <- calcRepository.requisitionNewRunId(agg.source.calcName)
         newlyVersionedData = VersionedDataUnpersisted(data = agg.r.data, version = newCalcId)
-        _ <- ev.persist(newlyVersionedData)
-      } yield VersionedData[R](newlyVersionedData.data, newlyVersionedData.version)
+        vdata <- ev.persistWrap(newlyVersionedData)
+      } yield vdata
     }
 
 
