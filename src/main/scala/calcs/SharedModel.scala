@@ -3,7 +3,7 @@ package calcs
 import scala.util.Try
 
 
-trait SharedModel {
+object SharedModel {
 
   /**
     * Just a single Try for now; in the future will wrap in Future or IO.

@@ -1,9 +1,7 @@
 package calcs
 
-import scala.reflect.runtime.universe._
-import scala.reflect.ClassTag
+import SharedModel._
 import scala.util.{Failure, Success, Try}
-//import shapeless.tag.@@ // TODO add to build.sbt
 import Verbose22Imports._
 
 object ImplicitRepositories {
@@ -14,7 +12,7 @@ object ImplicitRepositories {
     override def persist(t: VersionedDataUnpersisted[Double]): Try[Unit] = Try {
       println(s"DataRepository > PERSIST > $dataConceptName >Version${t.version} with output data {${t.data}}")
     }
-    override def hydrate(version: _root_.calcs.Verbose22Imports.CalcVersionAssigned): Try[Double] = ???
+    override def hydrate(version: CalcVersionAssigned): Try[Double] = ???
     override def hydrateLatestValid(): Try[VersionedData[Double]] = Try{
       VersionedData[Double](0.5, CalcVersionAssigned(CalcName("Double-Hydrator"), 3423))
     }
@@ -46,12 +44,12 @@ class MockCalcRepository extends CalcRepository {
   private var calcIdCounter = 0
 
   override def logInput[T : HasRepository](inputRecord: InputRecord[T]): Try[Unit] = Try {
-//    println(s"CalcRepository > log INPUT > $inputRecord of type: ${typeOf[T]}")
-//    println(s"CalcRepository > log INPUT > $inputRecord of type: ${implicitly[ClassTag[T]].runtimeClass}")
     println(s"CalcRepository > log INPUT > $inputRecord of type: {${HasRepository[T].fullName}}")
   }
 
-  override def logOutput[T : HasRepository](outputRecord: OutputRecord[T]): Try[Unit] = ???
+  override def logOutput[T : HasRepository](outputRecord: OutputRecord[T]): Try[Unit] = Try {
+    println(s"CalcRepository > log OUTPUT > $outputRecord of type: {${HasRepository[T].fullName}}")
+  }
 }
 
 object Verbose22Demo extends App {

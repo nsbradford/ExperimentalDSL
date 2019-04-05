@@ -1,10 +1,7 @@
 package calcs
 
-import scala.reflect.ClassTag
 import scala.util.Try
-import scala.reflect.runtime.universe._
-import cats.effect.IO
-
+import SharedModel._
 
 
 object Verbose22Imports
@@ -47,7 +44,7 @@ object GenerateText extends App {
 /**
   * Initial design - have a Calc for each Function1-22
   */
-trait Verbose22 extends SharedModel {
+trait Verbose22 {
 
   /**
     * Calculators have an internal Aggregator of
