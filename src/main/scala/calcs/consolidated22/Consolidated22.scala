@@ -9,7 +9,7 @@ object Consolidated22 {
 
   sealed trait Calc[R]{
     def name: String
-    final def fullyQualifiedName: CalcName = CalcName(s"$name: ${this.getClass.getName}") // or maybe use typetags
+    final def fullyQualifiedName: CalcName = CalcName(s"$name" /*: ${this.getClass.getName}"*/) // or maybe use typetags
 
     protected def calcRepository: CalcRepository
 
