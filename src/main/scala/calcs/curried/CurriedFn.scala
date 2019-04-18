@@ -1,12 +1,15 @@
-package calcs
+package calcs.curried
 
-import calcs.CurriedFn.Calc
 import calcs.SharedModel._
 
 import scala.util.{Failure, Success, Try}
 
 /**
-  * Created by nicholasbradford on 4/17/19.
+  * TODO big issues:
+  *   Because all outputs are persisted, this tries to persist the Calc.
+  *   Because new Calc1s are created, they attempt to get new version IDs
+  * Potential solution:
+  *   "AnonymousCalc" which passes in the parent version, and doesn't try to persist output Calc
   */
 object CurriedFn {
 
@@ -48,7 +51,7 @@ object CurriedFn {
                                  (implicit calcRepository: CalcRepository,
                                   evR: HasRepository[R],
                                   ev1: HasRepository[T1])
-    extends (VersionedData[T1] => Try[VersionedData[R]])
+    extends Function1[VersionedData[T1], Try[VersionedData[R]]]
 //      with CalcLike[R]
   {
     final def fullyQualifiedName: CalcName = CalcName(s"$name" /*: ${this.getClass.getName}"*/) // or maybe use typetags
@@ -105,7 +108,7 @@ object DemoCurriedFn extends App {
       versionedInt: VersionedData[Int]          <- HasRepository[Int].hydrateLatestValid()
 
       // TODO combine these two steps and link somehow...
-      reified: VersionedData[Calc[Int, String]] <- demoCalc2(versionedInt)
+      reified: VersionedData[Calc[Double, String]] <- demoCalc2(versionedInt)
       finalResult: VersionedData[String]        <- reified.data(intermediateResult)
 
     } yield finalResult
