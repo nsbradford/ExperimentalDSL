@@ -5,6 +5,7 @@ import scala.util.Try
 
 object SharedModel {
 
+
   /**
     * Just a single Try for now; in the future will wrap in Future or IO.
     */
@@ -33,6 +34,8 @@ object SharedModel {
   }
   case class CalcVersionAssigned(calcName: CalcName, calcRunId: Long) extends CalcVersion
   case class CalcUnversioned(calcName: CalcName) extends CalcVersion // attach some extra way to prevent two of these from looking equal?
+
+//  val y: VersionedData[String]#Inner = "hi"
 
   /**
     * Data always has a version.
