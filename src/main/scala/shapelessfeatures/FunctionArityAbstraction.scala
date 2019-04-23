@@ -13,10 +13,11 @@ object FunctionArityAbstraction {
     */
 
   def applyProduct[InputTuple <: Product, Function, InputRepr <: HList, Result]
-  (p: InputTuple)
-  (f: Function)
-  (implicit gen: Generic.Aux[InputTuple, InputRepr],
-   fp: FnToProduct.Aux[Function, InputRepr => Result])
+    (p: InputTuple)
+    (f: Function)
+    (implicit gen: Generic.Aux[InputTuple, InputRepr],
+     fp: FnToProduct.Aux[Function, InputRepr => Result]
+    )
   : Result = {
     f.toProduct(gen.to(p))
   }

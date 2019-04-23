@@ -10,28 +10,46 @@ import shapeless.{::, Generic, HList, HNil, the}
 
 object ArityCalcRequiresTypeParamsDemo extends App {
 
-  import calcs.CommonRepositories._
-  import calcs.Repo
   import calcs.Repo._
-
-  val x = Repo[String :: HNil]
+  import calcs.CommonRepositories._
 
   val vdata: VersionedData[String] = VersionedData("howdy", CalcVersionAssigned(CalcName("dummyCalc"), 34324))
-  val f: (String, String) => String = (a: String, b: String) => a + b
+
+
+  // TODO One-arg function requires wrapping in Tuple1 to find Generic Representation
   val g: (String) => String = (s: String) => s + "!!!"
+  val calc1 =
+    new ArityCalcRequiresTypeParams[
+      Tuple1[VersionedData[String]],
+      VersionedData[String] :: HNil,
+      String :: HNil,
+      (String) => String,
+      String
+      ](
+      "DemoCalc2",
+      g
+    )
 
-  val calc = new ArityCalcRequiresTypeParams[
-    (VersionedData[String], VersionedData[String]),
-    VersionedData[String] :: VersionedData[String] :: HNil,
-    String :: String :: HNil,
-    (String, String) => String,
-    String](
-    f
-  )
+  val result1: VersionedData[String] = calc1(Tuple1(vdata))
+  println(result1)
 
-  val result: VersionedData[String] = calc((vdata, vdata))
-  println(result)
-  //  println(applyWithVProd(Tuple1(vdata))(g))
+  // TODO multi-arg function still requires implicit type params to backtrack out input arg types
+  val f: (String, String) => String = (a: String, b: String) => a + b
+  val calc2 =
+    new ArityCalcRequiresTypeParams[
+      (VersionedData[String], VersionedData[String]),
+      VersionedData[String] :: VersionedData[String] :: HNil,
+      String :: String :: HNil,
+      (String, String) => String,
+      String
+      ](
+      "DemoCalc2",
+      f
+    )
+
+  val result2: VersionedData[String] = calc2((vdata, vdata))
+  println(result2)
+
 }
 
 
@@ -40,33 +58,34 @@ object ArityCalcRequiresTypeParamsDemo extends App {
   * Abstract over function arity.
   *   See Shapeless FnToProduct, and Astronaut's Guide 4.3: Chaining dependent functions
   *
-  * @param VersionedDataInput InputTuple
+  * @param VersionedDataInput VInputTuple
   * @param f Function
-  * @param gen Generic.Aux: InputTuple => InputRepr
-  * @param vprod VProduct: InputRepr => UnboxedData
+  * @param gen Generic.Aux: VInputTuple => VInputRepr
+  * @param vprod VProduct: VInputRepr => UnboxedData
   * @param fp FnToProduct: transforms FunctionN to Function1 taking in UnboxedData
-  * @tparam InputTuple inputs of arbitrary arity of form (VData[A], VData[B], ...)
-  * @tparam InputRepr InputTuple converted to generic form, e.g. VData[A] :: VData[B] :: HNil
+  * @tparam VInputTuple inputs of arbitrary arity of form (VData[A], VData[B], ...)
+  * @tparam VInputRepr VInputTuple converted to generic form, e.g. VData[A] :: VData[B] :: HNil
   * @tparam UnboxedData an HList of the inputs to Function, without the VData[_] wrapper
   * @tparam Function function of arbitrary arity: (A, B) => C
   * @tparam Result result type of Function
   * @return VersionedDataData[Result]
   */
-class ArityCalcRequiresTypeParams[InputTuple <: Product, InputRepr <: HList, UnboxedData <: HList, Function, Result]
-  (f: Function)
+class ArityCalcRequiresTypeParams[VInputTuple <: Product, VInputRepr <: HList, UnboxedData <: HList, Function, Result]
+  (name: String,
+   f: Function)
   (implicit
-   gen: Generic.Aux[InputTuple, InputRepr],
-   vprod: ArityCalcRequiresTypeParams.VProduct.Aux[InputRepr, UnboxedData],
+   gen: Generic.Aux[VInputTuple, VInputRepr],
+   vprod: ArityCalcRequiresTypeParams.VProduct.Aux[VInputRepr, UnboxedData],
    fp: FnToProduct.Aux[Function, UnboxedData => Result],
    repoInput: Repo[UnboxedData],
    repoResult: Repo[Result]
   )
-  extends (InputTuple => VersionedData[Result])
+  extends (VInputTuple => VersionedData[Result])
 {
-  def apply(VersionedDataInput: InputTuple): VersionedData[Result] = {
-    val inputAsHlistOfVersionedDataData: InputRepr = gen.to(VersionedDataInput)
-    val unwrappedVersionedDataData: UnboxedData = vprod.to(inputAsHlistOfVersionedDataData)
-    val answer = f.toProduct(unwrappedVersionedDataData)
+  def apply(VersionedDataInput: VInputTuple): VersionedData[Result] = {
+    val inputAsHlistOfVersionedData: VInputRepr = gen.to(VersionedDataInput)
+    val unwrappedVersionedData: UnboxedData = vprod.to(inputAsHlistOfVersionedData)
+    val result: Result = f.toProduct(unwrappedVersionedData)
 
     // TODO add actual side-effects here
 //    calcVersionAssigned <- this.calcRepository.requisitionNewRunId(this.fullyQualifiedName)
@@ -75,7 +94,7 @@ class ArityCalcRequiresTypeParams[InputTuple <: Product, InputRepr <: HList, Unb
 //    pureResult = f(vT1.data)
 //    persistedResult: VersionedData[R] <- this.evR.persistWrap(VersionedDataUnpersisted(pureResult, calcVersionAssigned))
 
-    VersionedData(answer, CalcVersionAssigned(CalcName("dummyCalc"), 34324))
+    VersionedData(result, CalcVersionAssigned(CalcName("dummyCalc"), 34324))
   }
 }
 
