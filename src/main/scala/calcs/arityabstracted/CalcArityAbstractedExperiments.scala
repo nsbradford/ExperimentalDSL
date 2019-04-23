@@ -1,5 +1,6 @@
 package calcs.arityabstracted
 
+import calcs.{Repo, Repo$}
 import calcs.SharedModel.{CalcName, CalcVersionAssigned, VersionedData, VersionedDataUnpersisted}
 import shapeless.LUBConstraint.<<:
 import shapeless.{::, Generic, HList, HNil, LUBConstraint, the}
@@ -21,43 +22,6 @@ import scala.util.Try
 //class Breaks extends PriceRepository with SillyRepository
 
 
-trait Repo[T] {
-  def persist(t: T): Unit
-  //    protected def logInput
-  //    protected def logOutput
-  //    protected def persist(t: VersionedDataUnpersisted[T]): Try[Unit] // just returns the same data
-  //    final def persistWrap(t: VersionedDataUnpersisted[T]): Try[VersionedData[T]] = {
-  //      for (_ <- this.persist(t)) yield t.toPersisted
-  //    }
-}
-
-object Repo {
-
-  def apply[T](implicit ev: Repo[T]): Repo[T] = ev
-  def create[T](f: T => Unit = (_: T) => ()) = new Repo[T] {
-    override def persist(t: T): Unit = f(t)
-  }
-
-  implicit val hNilEncoder = Repo.create[HNil]()
-
-  implicit def hListRepository[H, T <: HList]
-  (implicit
-   headRepository: Repo[H],
-   tailRepository: Repo[T])
-  : Repo[H :: T] = {
-    Repo.create{
-      case h :: t =>
-        headRepository.persist(h)
-        tailRepository.persist(t)
-    }
-  }
-}
-
-object CommonRepositories {
-  implicit val IntHasRepository = Repo.create[Int](x => println(s"Persisted Int: $x"))
-}
-
-
 /**
   * Requires:
   *   Input types are Tuples or HLists
@@ -69,7 +33,9 @@ object CalcArityAbstractedExperiments extends App {
 
   // see https://www.scala-exercises.org/shapeless/arity
 
-  import CommonRepositories._
+  import calcs.CommonRepositories._
+
+  val x = Repo[Int :: HNil]
 
   def applyWithEvd[InputTuple <: Product, Function, Repr <: HList, Result]
     (p: InputTuple)
@@ -95,7 +61,7 @@ object CalcArityAbstractedExperiments extends App {
 
 object VersionArityAbstracted extends App {
 
-  import CommonRepositories._
+  import calcs.CommonRepositories._
 
   trait VProduct[T]{
     type HListRepr <: HList
@@ -330,9 +296,6 @@ object CorrectSummoner extends App {
   }
   println(foo(vdata :: HNil))
 
-
-
-  import CommonRepositories._
 
   def applyWithVProd[InputTuple <: Product, Function, InputRepr <: HList, Result, UnboxedData <: HList]
     (p: InputTuple)

@@ -1,5 +1,7 @@
 package calcs
 
+import shapeless.{::, HList, HNil}
+
 import scala.util.Try
 
 
@@ -63,4 +65,43 @@ object SharedModel {
     def logOutput[T : HasRepository](outputRecord: OutputRecord[T]): Try[Unit]
     //    def logEquivalence[T](hierarchyRecord: HierarchyRecord[T]): Unit
   }
+}
+
+
+trait Repo[T] {
+  def persist(t: T): Unit
+  //    protected def logInput
+  //    protected def logOutput
+  //    protected def persist(t: VersionedDataUnpersisted[T]): Try[Unit] // just returns the same data
+  //    final def persistWrap(t: VersionedDataUnpersisted[T]): Try[VersionedData[T]] = {
+  //      for (_ <- this.persist(t)) yield t.toPersisted
+  //    }
+}
+
+object Repo {
+
+  def apply[T](implicit ev: Repo[T]): Repo[T] = ev
+  def create[T](f: T => Unit = (_: T) => ()) = new Repo[T] {
+    override def persist(t: T): Unit = f(t)
+  }
+
+  implicit val hNilEncoder = Repo.create[HNil]()
+
+  implicit def hListRepository[H, T <: HList]
+  (implicit
+   headRepository: Repo[H],
+   tailRepository: Repo[T])
+  : Repo[H :: T] = {
+    Repo.create{
+      case h :: t =>
+        headRepository.persist(h)
+        tailRepository.persist(t)
+    }
+  }
+}
+
+
+object CommonRepositories {
+  implicit val IntHasRepository = Repo.create[Int](x => println(s"Persisted Int: $x"))
+  implicit val StringHasRepository = Repo.create[String](x => println(s"Persisted Int: $x"))
 }
