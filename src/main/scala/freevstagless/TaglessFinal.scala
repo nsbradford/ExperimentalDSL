@@ -9,7 +9,7 @@ import cats.syntax.functor._
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.{Await, Future}
-
+import scala.language.higherKinds
 
 // cats apparently has some fancy helpers for this in https://typelevel.org/cats-tagless/
 //    among other things, it can apparently auto-convert to Free!
