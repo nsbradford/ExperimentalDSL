@@ -9,14 +9,20 @@ import shapeless.{::, Generic, HList, HNil}
 import scala.language.higherKinds
 
 
-
-trait Calc[VInputRepr, Result] extends (VInputRepr => IO[Versioned[Result]]) {
+/**
+  * TODO There's no technical reason WrappedCalc and ChainedCalc need to have separate types;
+  *   done here as prototype because I suspect it may help in debugging
+  *
+  * @tparam VInputRepr
+  * @tparam Result
+  */
+sealed trait Calc[VInputRepr, Result] extends (VInputRepr => IO[Versioned[Result]]) {
 
   topCalc =>
 
   def chain[Output](calc: Calc[Versioned[Result] :: HNil, Output])
   : Calc[VInputRepr, Output] = {
-    new CalcChain(this, calc)
+    new ChainedCalc(this, calc)
   }
 
   def wrapAs(name: String)
@@ -65,8 +71,8 @@ class WrappedCalc[VInputRepr, Result]
   *
   * TODO have an internal HList of the chain of calcs?
   */
-class CalcChain[VInputRepr1, Result1, Result2](f1: Calc[VInputRepr1, Result1],
-                                               f2: Calc[Versioned[Result1] :: HNil, Result2])
+class ChainedCalc[VInputRepr1, Result1, Result2](f1: Calc[VInputRepr1, Result1],
+                                                 f2: Calc[Versioned[Result1] :: HNil, Result2])
   extends Calc[VInputRepr1, Result2] {
 
   def apply(versionedDataInput: VInputRepr1): IO[Versioned[Result2]] =
@@ -112,7 +118,7 @@ class SimpleCalc[UnboxedInputs <: HList, Function, Result, VInputRepr <: HList]
    metadataRepository: MetadataRepository
    //   repoInput: Repo[UnboxedInputs], // TODO figure out DB Repr model
   )
-  extends Calc[VInputRepr, Result] //(VInputRepr => IO[Versioned[Result]])
+  extends Calc[VInputRepr, Result]
 {
 
   def apply(versionedDataInput: VInputRepr): IO[Versioned[Result]] =
@@ -120,16 +126,16 @@ class SimpleCalc[UnboxedInputs <: HList, Function, Result, VInputRepr <: HList]
       calcRun <- this.metadataRepository.requisitionNewRunId(this.name)
       unboxedData = vprod.to(versionedDataInput)
 //      _ <- metadataRepository.logInput(InputRecord[T](calcRun, inputCalc = CalcRun.unknown))(persistable)
-      _ <- metadataRepository.logOutput(OutputRecord[Result](calcRun))(persistable)
-      result = f.toProduct(unboxedData)
-      persistedResult <- persistable.persistWrap(VersionedUnpersisted[Result](result, calcRun))
+      _ <- metadataRepository.logOutput(OutputRecord[Result](calcRun))(persistable) // this must be in a transaction
+      result = f.toProduct(unboxedData) // this must be in a transaction
+      persistedResult <- persistable.persistWrap(VersionedUnpersisted[Result](result, calcRun)) // this must be in a transaction
     } yield persistedResult
 }
 
 
 object Calc {
 
-  type Calculator[UnboxedInput, Result] = Calc[Versioned[UnboxedInput] :: HNil, Result]
+  type Calc1[UnboxedInput, Result] = Calc[Versioned[UnboxedInput] :: HNil, Result]
   type VEffect[T] = IO[Versioned[T]]
 
 
@@ -177,3 +183,4 @@ object Calc {
   }
 
 }
+

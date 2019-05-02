@@ -39,8 +39,8 @@ object proto2Test extends App {
     Calc("DemoCalc1", g).bindPersister // ignore red
   val recast: Calc[Versioned[String] :: HNil, String] = simpleCalc
 
-  import Calc.{Calculator, VEffect}
-  val niceAlias: Calculator[String, String] = simpleCalc
+  import Calc.{Calc1, VEffect}
+  val niceAlias: Calc1[String, String] = simpleCalc
 
 
   // TODO import syntax.std.tuple._ to allow passing tuples instead of HLists
@@ -51,7 +51,7 @@ object proto2Test extends App {
 
   val tupleDemo =
     for {
-      result <- calc2Typed((vStr, vStr).productElements) // TODO get working
+      result <- calc2Typed((vStr, vStr).productElements) // TODO red underline fixable?
     } yield result
 
   //  implicit class ConvenientTupleToHListSyntax[T <: Product](tuple: T){
@@ -65,9 +65,25 @@ object proto2Test extends App {
 
 
   // TODO nesting
-  val smallNested: Calculator[String, String] = smallChain wrapAs "Complicated"
+  val smallNested: Calc1[String, String] = smallChain wrapAs "Complicated"
   val demoNested: VEffect[String] = smallNested(vStr :: HNil)
 
   demoNested.unsafeRunAsync(_ => Unit)
+
+
+  // TODO parallelization is really ugly...
+  import cats.implicits._
+  import scala.concurrent.ExecutionContext
+  import cats.effect.ContextShift
+
+  implicit val cs: ContextShift[IO] = IO.contextShift(ExecutionContext.global)
+
+  val parallelized: IO[Versioned[String]] =
+    for { //
+      result <- (calc1(vStr :: HNil), calc1(vStr :: HNil))
+        .parMapN((a, b) => calc2Typed(a :: b :: HNil))
+        .flatten
+    } yield result
+
 
 }
