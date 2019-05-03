@@ -83,6 +83,21 @@ case class OutputRecord(calcVersion: CalcRun)
   * Later, abstract over monad M[_] instead of tying to Try.
   */
 
+trait Hydrator[T]{
+  def hydrate(version: CalcRun): Try[T]
+  def hydrateLatestValid(): Try[Versioned[T]]
+}
+
+trait Persister[T]{
+  def dbTypeRepr: StorageTypeRepresentation
+
+  protected def persist(t: VersionedUnpersisted[T]): Try[Unit]
+
+  final def persistWrap(t: VersionedUnpersisted[T]): Try[Versioned[T]] = {
+    for (_ <- this.persist(t)) yield t.toPersisted
+  }
+}
+
 
 object Persister {
   def apply[T](implicit ev: Persister[T]): Persister[T] = ev
