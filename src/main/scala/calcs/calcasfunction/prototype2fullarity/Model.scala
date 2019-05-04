@@ -1,4 +1,4 @@
-package calcs.calcasfunction.prototype2
+package calcs.calcasfunction.prototype2fullarity
 
 import scala.util.Try
 import scala.language.higherKinds
@@ -8,8 +8,6 @@ import cats.effect.IO
   * Carry contextual metadata along with the data.
   *
   * @tparam T the datatype
-  * @tparam VersionId the producer of this data T
-  * @tparam TypeStorageId a way to identify type T in storage
   */
 sealed trait Contextful[+T]{
   def get: T
@@ -52,7 +50,6 @@ sealed trait DataWithCalculatorMetadata[+T] extends Contextful[T]
   *
   * @param get
   * @param version
-  * @param storageId
   * @tparam T
   */
 case class Versioned[+T](get: T, version: CalcRun/*, storageId: StorageTypeId*/)
@@ -64,7 +61,7 @@ case class Unversioned[+T](get: T) extends DataWithCalculatorMetadata[T]
   * Type to encode the unsafe middle ground where data has been produced,
   * but not yet persisted to storage.
   *
-  * @see [[calcs.calcasfunction.prototype2.Versioned]]
+  * @see [[calcs.calcasfunction.prototype2fullarity.Versioned]]
   */
 case class VersionedUnpersisted[+T](get: T, version: CalcRun/*, storageId: StorageTypeId*/)
   extends DataWithCalculatorMetadata[T]

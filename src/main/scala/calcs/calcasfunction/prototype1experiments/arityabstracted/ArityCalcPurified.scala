@@ -1,7 +1,7 @@
-package calcs.calcasfunction.prototype1.arityabstracted
+package calcs.calcasfunction.prototype1experiments.arityabstracted
 
-import calcs.calcasfunction.prototype1.Repo
-import calcs.calcasfunction.prototype1.SharedModel.{CalcName, CalcVersionAssigned, VersionedData}
+import calcs.calcasfunction.prototype1experiments.Repo
+import calcs.calcasfunction.prototype1experiments.SharedModel.{CalcName, CalcVersionAssigned, VersionedData}
 import shapeless.ops.function.FnToProduct
 import shapeless.syntax.std.function._
 import shapeless.{::, Generic, HList, HNil}
@@ -9,7 +9,7 @@ import shapeless.{::, Generic, HList, HNil}
 
 object ArityCalcPurifiedDemo extends App {
 
-  import calcs.calcasfunction.prototype1.CommonRepositories._
+  import calcs.calcasfunction.prototype1experiments.CommonRepositories._
 
   val vStr: VersionedData[String] = VersionedData("howdy", CalcVersionAssigned(CalcName("dummyCalc"), 34324))
 

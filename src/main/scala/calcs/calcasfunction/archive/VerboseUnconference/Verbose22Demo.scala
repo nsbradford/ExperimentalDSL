@@ -1,6 +1,6 @@
 package calcs.calcasfunction.archive.VerboseUnconference
 
-import calcs.calcasfunction.prototype1.SharedModel._
+import calcs.calcasfunction.prototype1experiments.SharedModel._
 import calcs.calcasfunction.archive.VerboseUnconference.Verbose22Imports._
 
 import scala.util.{Failure, Success, Try}

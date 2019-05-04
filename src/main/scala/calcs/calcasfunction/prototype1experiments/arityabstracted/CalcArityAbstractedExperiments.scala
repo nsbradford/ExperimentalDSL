@@ -1,8 +1,8 @@
-package calcs.calcasfunction.prototype1.arityabstracted
+package calcs.calcasfunction.prototype1experiments.arityabstracted
 
-import calcs.calcasfunction.prototype1.Repo
-import calcs.calcasfunction.prototype1.Repo
-import calcs.calcasfunction.prototype1.SharedModel.{CalcName, CalcVersionAssigned, VersionedData, VersionedDataUnpersisted}
+import calcs.calcasfunction.prototype1experiments.Repo
+import calcs.calcasfunction.prototype1experiments.Repo
+import calcs.calcasfunction.prototype1experiments.SharedModel.{CalcName, CalcVersionAssigned, VersionedData, VersionedDataUnpersisted}
 import shapeless.LUBConstraint.<<:
 import shapeless.{::, Generic, HList, HNil, LUBConstraint, the}
 import shapeless.syntax.std.function._
@@ -34,7 +34,7 @@ object CalcArityAbstractedExperiments extends App {
 
   // see https://www.scala-exercises.org/shapeless/arity
 
-  import calcs.calcasfunction.prototype1.CommonRepositories._
+  import calcs.calcasfunction.prototype1experiments.CommonRepositories._
 
   val x = Repo[Int :: HNil]
 
@@ -62,7 +62,7 @@ object CalcArityAbstractedExperiments extends App {
 
 object VersionArityAbstracted extends App {
 
-  import calcs.calcasfunction.prototype1.CommonRepositories._
+  import calcs.calcasfunction.prototype1experiments.CommonRepositories._
 
   trait VProduct[T]{
     type HListRepr <: HList

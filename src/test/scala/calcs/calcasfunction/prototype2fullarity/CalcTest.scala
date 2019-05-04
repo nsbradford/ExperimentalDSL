@@ -1,4 +1,4 @@
-package calcs.calcasfunction.prototype2
+package calcs.calcasfunction.prototype2fullarity
 
 import org.scalatest._
 

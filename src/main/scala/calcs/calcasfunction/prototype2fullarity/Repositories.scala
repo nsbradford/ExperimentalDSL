@@ -1,4 +1,4 @@
-package calcs.calcasfunction.prototype2
+package calcs.calcasfunction.prototype2fullarity
 
 import cats.effect.IO
 
@@ -43,4 +43,6 @@ object CommonRepositories {
     "String-Std",
     x => IO(println(s"Persisted String: $x"))
   )
+
+
 }

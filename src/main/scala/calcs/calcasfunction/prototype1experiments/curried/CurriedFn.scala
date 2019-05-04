@@ -1,6 +1,6 @@
-package calcs.calcasfunction.prototype1.curried
+package calcs.calcasfunction.prototype1experiments.curried
 
-import calcs.calcasfunction.prototype1.SharedModel._
+import calcs.calcasfunction.prototype1experiments.SharedModel._
 
 import scala.util.{Failure, Success, Try}
 

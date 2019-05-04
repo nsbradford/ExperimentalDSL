@@ -1,9 +1,17 @@
-package calcs.calcasfunction.smartdomain
+package calcs.calcasfunction.prototype3apis
 
 import scala.util.{Success, Try}
 import scala.util.Try
 import scala.language.higherKinds
 //import cats.effect.IO
+import cats.Monad
+import cats.effect.IO
+import shapeless.ops.function.FnToProduct
+import shapeless.syntax.std.function._
+import shapeless.{::, Generic, HList, HNil}
+
+import scala.language.higherKinds
+import scala.util.Try
 
 // directly from package calcs.calcasfunction.prototype2
 
@@ -33,21 +41,36 @@ object CalcRun {
 /**
   * Carry contextual metadata along with the data.
   */
-sealed trait Contextful[+T]{
+trait Versioned[+T]{
   def get: T
-  //  def version: VersionId
-  //  def storageId: TypeStorageId
+  def versions: Set[DataVersion]
 }
 
+
 /**
-  * Standard metadata format.
+  * An API of type T with many methods, all of which are versioned.
+  *
+  * Warning: it's up to the user to enforce consistency.
   */
-sealed trait DataWithCalculatorMetadata[+T] extends Contextful[T]
+trait VersionedAPI[T <: VersionedAPI[T]] extends Versioned[T] {
+  this: T =>
+  override def get: T = this
+}
 
-case class Versioned[+T](get: T, version: CalcRun)
-  extends DataWithCalculatorMetadata[T]
-case class Unversioned[+T](get: T) extends DataWithCalculatorMetadata[T]
 
+/**
+  * An API for a single piece of versioned data T.
+  */
+trait Repository[T] extends Versioned[T]{
+  def dataVersion: DataVersion
+  override final def versions: Set[DataVersion] = Set(dataVersion)
+}
+
+
+/**
+  * An API for an eagerly evaluated piece of data T.
+  */
+case class VersionedData[T](get: T, dataVersion: DataVersion) extends Repository[T]
 
 /**
   * Type to encode the unsafe middle ground where data has been produced,
@@ -55,16 +78,26 @@ case class Unversioned[+T](get: T) extends DataWithCalculatorMetadata[T]
   *
   * @see [[calcs.calcasfunction.prototype2fullarity.Versioned]]
   */
-case class VersionedUnpersisted[+T](get: T, version: CalcRun/*, storageId: StorageTypeId*/)
-  extends DataWithCalculatorMetadata[T]
+case class VersionedUnpersisted[T](get: T, dataVersion: DataVersion) extends Repository[T]
 {
-  def toPersisted: Versioned[T] = Versioned(get, version)
+  def toPersisted: VersionedData[T] = VersionedData(get, dataVersion)
+}
+
+
+/**
+  * Trivially meets with Versioned API by requesting not to persist any metadata.
+  */
+case class UnversionedData[+T](get: T) extends Versioned[T]{
+  override lazy val versions = Set()
 }
 
 
 // =========================================================================================================
 // METADATA RECORDS
 // =========================================================================================================
+
+// TODO use macro or classpath to eliminate collisions
+case class StorageTypeRepresentation(name: String)
 
 
 /**
@@ -73,9 +106,10 @@ case class VersionedUnpersisted[+T](get: T, version: CalcRun/*, storageId: Stora
   *   Output: CalcVersion produced [Type]
   *   Equivalence/Hierarchy: CalcVersion output [Type] == other CalcVersion of same type
   */
+case class DataVersion(inputCalc: CalcRun, dataType: StorageTypeRepresentation)
 case class RunRecord(calcVersion: CalcRun) // add date, isSuccessful, isValid
-case class InputRecord(calcVersion: CalcRun, inputCalc: CalcRun, dataType: StorageTypeRepresentation)
-case class OutputRecord(calcVersion: CalcRun)
+case class InputRecord(calcVersion: CalcRun, inputData: DataVersion)
+case class OutputRecord(calcVersion: CalcRun, dataType: StorageTypeRepresentation)
 //case class HierarchyRecord(upper: CalcRun, inner: CalcRun)
 
 
@@ -83,43 +117,51 @@ case class OutputRecord(calcVersion: CalcRun)
   * Later, abstract over monad M[_] instead of tying to Try.
   */
 
-trait Hydrator[T]{
+trait Hydratable[T]{
   def hydrate(version: CalcRun): Try[T]
-  def hydrateLatestValid(): Try[Versioned[T]]
+  def hydrateLatestValid(): Try[VersionedData[T]]
 }
 
-trait Persister[T]{
-  def dbTypeRepr: StorageTypeRepresentation
+trait Persistable[T]{
+  def storageTypeRepresentation: StorageTypeRepresentation
+  def attachRepr(data: T, calcRun: CalcRun): VersionedData[T] = {
+    VersionedData[T](data, DataVersion(calcRun, storageTypeRepresentation))
+  }
 
   protected def persist(t: VersionedUnpersisted[T]): Try[Unit]
 
-  final def persistWrap(t: VersionedUnpersisted[T]): Try[Versioned[T]] = {
+  final def persistWrap(t: VersionedUnpersisted[T]): Try[VersionedData[T]] = {
     for (_ <- this.persist(t)) yield t.toPersisted
   }
 }
 
 
-object Persister {
-  def apply[T](implicit ev: Persister[T]): Persister[T] = ev
-  def create[T](repr: String, f: (VersionedUnpersisted[T]) => Try[Unit]): Persister[T] = {
-    new Persister[T]{
+object Persistable {
+  def apply[T](implicit ev: Persistable[T]): Persistable[T] = ev
+  def create[T](repr: String, f: (VersionedUnpersisted[T]) => Try[Unit]): Persistable[T] = {
+    new Persistable[T]{
       protected def persist(t: VersionedUnpersisted[T]): Try[Unit] = f(t)
-      override val dbTypeRepr: StorageTypeRepresentation = StorageTypeRepresentation(repr)
+      override val storageTypeRepresentation: StorageTypeRepresentation = StorageTypeRepresentation(repr)
     }
   }
 }
 
 trait CalcIdRepository{
   def requisitionNewRunId(calcName: CalcName): Try[CalcRun]
-//  def logEquivalence(hierarchyRecord: HierarchyRecord): Try[Unit]
+  //  def logEquivalence(hierarchyRecord: HierarchyRecord): Try[Unit]
 }
 
 trait MetadataRepository {
   def logRun(runRecord: RunRecord): Try[Unit]
   def logInput(inputRecord: InputRecord): Try[Unit]
   def logOutput(outputRecord: OutputRecord): Try[Unit]
-
   def getLatestRun(calcName: CalcName): Try[CalcRun]
+
+  // TODO i think need Cats.traverse or Cats.Validated for this conversion to accumulate errors?
+  final def logAllInputs(calcRun: CalcRun, inputs: Set[DataVersion]): Try[Unit] = {
+    val loggingAttempts = inputs.map(i => logInput(InputRecord(calcRun, i)))
+    Success()
+  }
 }
 
 

@@ -1,4 +1,4 @@
-package calcs.calcasfunction.prototype1
+package calcs.calcasfunction.prototype1experiments
 
 import shapeless.{::, HList, HNil}
 

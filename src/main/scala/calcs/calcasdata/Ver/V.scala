@@ -8,20 +8,17 @@ import scala.language.higherKinds
 // and a AssignedVariable[T] which is labelled.
 
 sealed trait V[T]{
-  def function: Option[String]
-  def wrappedAs(s: String): V[T]
+  final def wrappedAs(s: String): Procedure[T] = Procedure(s, this)
+  final def named(s: String): NamedVariable[T] = NamedVariable(s, this)
   def run: T
 //  def run[X](context: X, state: (X, V[Any]) => X): (X, T)
 //  def runContextless: (Unit, T) = run[Unit]((), (_, _) => ())
   //  def interpret[X[_] <: V[_]](f: X[T] => T): T
 }
 
-//case class Function[T]
-
-case class Pure[T](in: T,
+case class Pure[T](raw: T,
                    function: Option[String]=None) extends V[T]{
-  override def wrappedAs(s: String): Pure[T] = this.copy(function=Some(s))
-  def run = in
+  def run = raw
 //  override def run[X](context: X, state: (X, V[Any]) => X): (X, T) = {
 //    val myState: X = state(context, in)
 //    (myState, in)
@@ -31,7 +28,6 @@ case class Pure[T](in: T,
 case class Map[A, T](in: V[A],
                      f: A => T,
                      function: Option[String]=None) extends V[T]{
-  override def wrappedAs(s: String): Map[A, T] = this.copy(function=Some(s))
   def run = f(in.run)
 //  override def run[X](context: X,
 //                      state: (X, V[Any]) => X): (X, T) = {
@@ -45,7 +41,6 @@ case class Map[A, T](in: V[A],
 case class FMap[A, T](in: V[A],
                       f: A => V[T],
                       function: Option[String]=None) extends V[T]{
-  override def wrappedAs(s: String): FMap[A, T] = this.copy(function=Some(s))
   def run = f(in.run).run
 //  override def run[X](context: X, state: (X, V[Any]) => X): (X, T) = {
 //    val (innerState, result): (X, A) = in.run[X](context, state)
@@ -59,7 +54,6 @@ case class Combine[A, B, T](a: V[A],
                             b: V[B],
                             f: (A, B) => T,
                             function: Option[String]=None) extends V[T]{
-  override def wrappedAs(s: String): Combine[A, B, T] = this.copy(function=Some(s))
   def run = f(a.run, b.run)
 //  override def run[X](context: X, state: (X, V[Any]) => X): (X, T) = {
 //    val (innerStateA, resultA): (X, A) = a.run[X](context, state)
@@ -70,41 +64,59 @@ case class Combine[A, B, T](a: V[A],
 //  }
 }
 
+/**
+  * Both Procedures and NamedVariables are just V[T] + String name,
+  *   the difference is that in diagnostics you know Procedures
+  *   with the same name link to the same inner function,
+  *   whereas Variables with the same name don't mean anything
+  *   (are presumably in different namespaces - could enforce with macros).
+  *
+  * I.e. the rule is that all Functions should return Procedures,
+  *   but inside the functions you can assign them names to make them appear
+  *   named inside diagnostics.
+  */
+case class Procedure[T](name: String, in: V[T]) extends V[T] {
+  override def run = in.run
+}
+case class NamedVariable[T](name: String, in: V[T]) extends V[T] {
+  override def run = in.run
+}
 
 /**
   *
   */
 object VDemo extends App {
 
-  def add(a: V[Double], b: V[Double]): Combine[Double, Double, Double] = {
+  def add(a: V[Double], b: V[Double]): Procedure[Double] = {
     Combine(a, b, (x: Double, y: Double) => x + y) wrappedAs "Add"
   }
 
-  def formattedEquity[A](a: V[A]): Map[A, String] = {
+  def formattedEquity[A](a: V[A]): Procedure[String] = {
     Map(a, (x: A) => x.toString) wrappedAs "formattedEquity"
   }
 
-  def mapOption[A, B](a: V[Option[A]], f: A => B): Map[Option[A], Option[B]] = {
+  def mapOption[A, B](a: V[Option[A]], f: A => B): Procedure[Option[B]] = {
     Map(a, (opta: Option[A]) => opta.map(f)) wrappedAs "Map Option"
   }
 
-  def leverDoubleIfNotNegative(a: Double): V[Double] = {
+  def leverDoubleIfNotNegative(a: Double): Procedure[Double] = {
     a match {
       case 0.0 => Pure(0.0)
       case x => add(Pure(x), Pure(x))
     }
   } wrappedAs "leverDoubleIfNotNegative"
 
-  val debts = Pure(8d)
-  val cash = Pure(10d)
-  val assets = add(cash, debts)
-  val adjusted = FMap(assets, (d: Double) => leverDoubleIfNotNegative(d))
-  val formatted: Map[Double, String] = formattedEquity(adjusted)
-
   def formatFunction(x: Option[String]): String = x match {
     case Some(name) => s"Context{$name} "
     case None => ""
   }
+
+  val debts = Pure(8d)
+  val cash = Pure(10d)
+  val assets: NamedVariable[Double] = add(cash, debts) named "Total Assets"
+  val adjusted: FMap[Double, Double] = FMap(assets, (d: Double) => leverDoubleIfNotNegative(d))
+  val formatted: Procedure[String] = formattedEquity(adjusted)
+
 
   // TODO not sure how to overcome type erasure to create custom intepreters.
   // TODO not stack safe

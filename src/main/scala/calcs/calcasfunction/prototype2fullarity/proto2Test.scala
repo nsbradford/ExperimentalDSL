@@ -1,4 +1,4 @@
-package calcs.calcasfunction.prototype2
+package calcs.calcasfunction.prototype2fullarity
 
 
 import cats.Monad
@@ -10,7 +10,7 @@ import shapeless.{::, Generic, HList, HNil}
 
 object proto2Test extends App {
 
-  import calcs.calcasfunction.prototype2.CommonRepositories._
+  import calcs.calcasfunction.prototype2fullarity.CommonRepositories._
 
   val vStr: Versioned[String] = Versioned("howdy", CalcRun("dummyCalc", 34324))
 
