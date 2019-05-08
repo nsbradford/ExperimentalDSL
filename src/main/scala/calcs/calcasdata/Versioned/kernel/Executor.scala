@@ -1,5 +1,4 @@
-package calcs.calcasdata.Versioned
-
+package calcs.calcasdata.Versioned.kernel
 
 import scala.language.higherKinds
 
@@ -22,9 +21,4 @@ trait Executor {
   def run[A, B, T](combine: Combine[A, B, T]): Result[T]
   def run[T](procedure: Procedure[T]): Result[T]
 
-}
-
-trait VExecutor {
-
-  type Result[T] <:
 }
