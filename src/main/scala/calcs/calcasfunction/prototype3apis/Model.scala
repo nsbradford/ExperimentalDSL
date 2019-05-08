@@ -41,10 +41,11 @@ object CalcRun {
 /**
   * Carry contextual metadata along with the data.
   */
-trait Versioned[+T]{
+trait Versioned[T]{
   def get: T
   def versions: Set[DataVersion]
 }
+
 
 
 /**
@@ -87,7 +88,7 @@ case class VersionedUnpersisted[T](get: T, dataVersion: DataVersion) extends Rep
 /**
   * Trivially meets with Versioned API by requesting not to persist any metadata.
   */
-case class UnversionedData[+T](get: T) extends Versioned[T]{
+case class UnversionedData[T](get: T) extends Versioned[T]{
   override lazy val versions = Set()
 }
 
@@ -158,6 +159,7 @@ trait MetadataRepository {
   def getLatestRun(calcName: CalcName): Try[CalcRun]
 
   // TODO i think need Cats.traverse or Cats.Validated for this conversion to accumulate errors?
+  // https://gist.github.com/cb372/458df4a98a2abb29b03f0d6f42298835
   final def logAllInputs(calcRun: CalcRun, inputs: Set[DataVersion]): Try[Unit] = {
     val loggingAttempts = inputs.map(i => logInput(InputRecord(calcRun, i)))
     Success()

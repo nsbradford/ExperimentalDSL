@@ -15,9 +15,8 @@ import scala.util.Try
   * @tparam VInputRepr
   * @tparam Result
   */
-sealed trait Calc[VInputRepr, Result] extends (VInputRepr => Try[VersionedData[Result]]) {
-
-  topCalc =>
+trait Calc[VInputRepr, Result] extends //Versioned[Result]
+  (VInputRepr => Try[VersionedData[Result]]){
 
   //  def chain[Output](calc: Calc[Versioned[Result] :: HNil, Output])
   //  : Calc[VInputRepr, Output] = {
@@ -42,7 +41,6 @@ sealed trait Calc[VInputRepr, Result] extends (VInputRepr => Try[VersionedData[R
   //        } yield result2
   //    }
   //  }
-
 }
 
 /**

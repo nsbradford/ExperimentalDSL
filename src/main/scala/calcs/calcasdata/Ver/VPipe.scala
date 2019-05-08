@@ -14,6 +14,7 @@ sealed trait V[T]{
 //  def run[X](context: X, state: (X, V[Any]) => X): (X, T)
 //  def runContextless: (Unit, T) = run[Unit]((), (_, _) => ())
   //  def interpret[X[_] <: V[_]](f: X[T] => T): T
+
 }
 
 case class Pure[T](raw: T,
