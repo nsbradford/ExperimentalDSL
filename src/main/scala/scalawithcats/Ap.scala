@@ -1,4 +1,4 @@
-package applicatives
+package scalawithcats
 
 import cats.Applicative
 import cats.data.Validated
