@@ -10,6 +10,7 @@ libraryDependencies += "org.typelevel" %% "cats-core" % "1.6.0"
 libraryDependencies += "org.typelevel" %% "cats-free" % "1.6.0"
 libraryDependencies += "org.typelevel" %% "cats-effect" % "1.2.0"
 
+libraryDependencies += "com.github.nscala-time" %% "nscala-time" % "2.22.0"
 
 // shapeless
 
