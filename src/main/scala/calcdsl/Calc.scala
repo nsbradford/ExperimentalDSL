@@ -1,6 +1,6 @@
 package calcdsl
 
-import calcdsl.interpeters.SyncInterpreter
+import calcdsl.interpeters.{SyncDiagInterpreter, SyncInterpreter}
 import cats.{Applicative, Functor, Monad}
 
 import scala.concurrent.duration.FiniteDuration
@@ -18,11 +18,12 @@ sealed trait Calc[A] {
   def map[B](f: A => B): Calc[B] = FlatMapCalc[A, B](this, a => Calc.pure(f(a)))
 //  def mergeWith[B](fb: Calc[B]): Calc[(A, B)] = MergeCalc(this, fb)
   def flatMap[B](f: A => Calc[B]): Calc[B] = FlatMapCalc(this, f)
-  def output(repository: VersionedRepository[A]): Calc[A] = OutputCalc(this, repository)
+  def output(implicit repository: VersionedRepository[A]): Calc[A] = OutputCalc(this, repository)
 
   def runWith(in: CalcInterpreter): in.Result[A]
-  def runSync(versionManager: VersionManager): VersionedResult[A] =
-    this.runWith(new SyncInterpreter(versionManager))
+  def runSync(): A = this.runWith(new SyncInterpreter)
+  def runSyncWithDiags(versionManager: VersionManager): VersionedResult[A] =
+    this.runWith(new SyncDiagInterpreter(versionManager))
 }
 
 object Calc{
@@ -47,7 +48,9 @@ object Calc{
 //      ff.mergeWith(fa).map{ case (f, a) => f(a) }
     ff.flatMap(fab => fa.map(fab))
   }
-  // TODO derive monad instance on top of applicative
+
+  // derive monad instance on top of applicative
+
 //  implicit val calcMonad: Monad[Calc] = new Monad[Calc]
 }
 

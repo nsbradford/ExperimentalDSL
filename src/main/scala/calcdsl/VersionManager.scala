@@ -9,7 +9,7 @@ trait VersionManager {
 
   def asOfDate: DateTime
 
-  // TODO all of these should use Future or other
+  // all of these should use Future or other
 
   // write
   def requisitionNewVersion(repositoryName: RepositoryName): Version

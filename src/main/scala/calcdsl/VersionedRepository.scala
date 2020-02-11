@@ -9,7 +9,8 @@ trait VersionedRepository[A] {
 
   def name: RepositoryName
 
-  // TODO syntactic sugar for new API
+  // syntactic sugar for new API
+
 //  def apply: ReadCalc[A] = latest
 //  def latest: ReadCalc[A]
 
