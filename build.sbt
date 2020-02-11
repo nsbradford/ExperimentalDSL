@@ -30,3 +30,12 @@ libraryDependencies += "org.scalactic" %% "scalactic" % "3.0.5"
 libraryDependencies += "org.scalatest" %% "scalatest" % "3.0.5" % "test"
 resolvers += "Artima Maven Repository" at "http://repo.artima.com/releases"
 //addSbtPlugin("com.artima.supersafe" % "sbtplugin" % "1.1.3") // TODO unresolved
+
+
+// google guava
+libraryDependencies += "com.google.guava" % "guava" % "28.0-jre"
+
+
+// only way to fail on non-exhaustive match warnings
+//scalacOptions += "-Xfatal-warnings"
+

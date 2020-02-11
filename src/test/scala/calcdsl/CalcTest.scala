@@ -6,6 +6,7 @@ import org.scalatest.{FlatSpec, Matchers, WordSpec}
 
 import scala.util.Try
 import Syntax._
+import cats.Traverse
 import org.joda.time.DateTime
 import cats.syntax.applicative._
 
@@ -19,8 +20,8 @@ class CalcTest extends WordSpec with Matchers {
   val address = RepositoryName("address")
 
   "Calc" when {
-    "" should {
-      "memoize" in {
+    "diamond-shaped dependency graph" should {
+      "only evaluate root once, cache it, and not evaluate again" in {
         val manager = new TestVersionManager(asOfDate)
         val db = new MockDatabase[Int](address)
         val a = Calc(1).output(db)
@@ -30,6 +31,30 @@ class CalcTest extends WordSpec with Matchers {
         d.runSync(manager)
         db.dbTable.size shouldBe 1
         manager.getAllRunsOf(address).size shouldBe 1
+      }
+    }
+
+    "expressing" should {
+      val manager = new TestVersionManager(asOfDate)
+      "work in for-comprehensions" in {
+        val z =
+          for {
+            x <- Calc(1)
+            y <- Calc(2)
+          } yield x + y
+        z.runSync(manager).get shouldBe 3
+      }
+      "work with applicative mapN" in {
+        val x = Calc(1)
+        val y = Calc(2)
+        val z = (x, y).mapN(_ + _)
+        z.runSync(manager).get shouldBe 3
+      }
+      "work with traverse" in {
+        import cats.instances.list._
+        val xs: List[Calc[Int]] = List(Calc(1), Calc(2), Calc(3))
+        val result: Calc[List[Int]] = Traverse[List].sequence(xs)
+        result.runSync(manager).get shouldBe List(1, 2, 3)
       }
     }
   }
