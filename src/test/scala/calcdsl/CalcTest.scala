@@ -20,6 +20,7 @@ class CalcTest extends WordSpec with Matchers {
 
   val asOfDate = DateTime.now()
   val address = RepositoryName("address")
+  val ignore = RepositoryName("ignore")
 
   "Calc" when {
     "diamond-shaped dependency graph" should {
@@ -76,6 +77,28 @@ class CalcTest extends WordSpec with Matchers {
 
         val calc: Calc[Int] = buildNested(1.calc, 1000)
         a[StackOverflowError] shouldBe thrownBy { calc.runSync() }
+      }
+    }
+
+    "overriding particular values" should {
+//      val preloaded: Seq[Versioned[Int]] = Seq(Versioned(1, Version(1)))
+      val preloaded = Map(CalcRun(address, Version(1), asOfDate) -> Versioned(9000, Version(1)))
+      val manager = new TestVersionManager(asOfDate, preloaded.keys.toSeq)
+      val db = new MockDatabase[Int](address, preloaded.values.toSeq)
+      val ignoreDb = new MockDatabase[Int](ignore)
+      val overrides = preloaded.map{ case (run, versioned) => run.repositoryName -> versioned.version}
+
+      "affect only calcs with the correct name" in {
+        val calc = Calc(1).output(ignoreDb)
+        calc.runSyncWithDiags(manager, overrides).get shouldBe 1
+      }
+      "affect the latest calc in the chain" in {
+        val calc = Calc(1).output(db).map(_ + 1).output(db).map(_ + 1)
+        calc.runSyncWithDiags(manager, overrides).get shouldBe 9001
+      }
+      "affect all Calcs with that name, not only one" in {
+        val calc = (Calc(1).output(db), Calc(1).output(db)).mapN(_ + _)
+        calc.runSyncWithDiags(manager, overrides).get shouldBe 18000
       }
     }
   }

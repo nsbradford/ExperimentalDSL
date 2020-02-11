@@ -22,8 +22,9 @@ sealed trait Calc[A] {
 
   def runWith(in: CalcInterpreter): in.Result[A]
   def runSync(): A = this.runWith(new SyncInterpreter)
-  def runSyncWithDiags(versionManager: VersionManager): VersionedResult[A] =
-    this.runWith(new SyncDiagInterpreter(versionManager))
+  def runSyncWithDiags(versionManager: VersionManager,
+                       overrides: Map[RepositoryName, Version] = Map()): VersionedResult[A] =
+    this.runWith(new SyncDiagInterpreter(versionManager, overrides))
 }
 
 object Calc{
@@ -50,7 +51,6 @@ object Calc{
   }
 
   // derive monad instance on top of applicative
-
 //  implicit val calcMonad: Monad[Calc] = new Monad[Calc]
 }
 
