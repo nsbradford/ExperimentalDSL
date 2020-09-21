@@ -36,6 +36,13 @@ class TrieNode(val children: mutable.Map[Int, TrieNode] = mutable.Map(),
   // more generic than hardcoding {0,1} as children options (for future expansion of this class), at price of compile-time safety
   require(children.keySet.forall(key => Set(0,1) contains key))
 
+  override def toString: String = s"TrieNode(stored=$stored, children={${children.mkString(",")}})"
+
+  override def equals(obj: scala.Any): Boolean = obj match {
+    case t : TrieNode => t.stored == stored && t.children == children
+    case _ => false
+  }
+
   /** Decodes integer into binary representation (least sig bit first),
     * and then stores into the Trie. */
   def insert(key: uint, value: String): Unit = insertHelper(toBinaryLeastSigBitFirst(key), value)
