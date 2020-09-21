@@ -56,10 +56,6 @@ class TrieTest extends WordSpec with Matchers {
     }
 
     "insert" should {
-      "work with key of length 1" in {
-
-      }
-
       "work on an empty tree" in {
         val trie = new TrieNode()
         val expectedStr = "answer"
@@ -87,8 +83,38 @@ class TrieTest extends WordSpec with Matchers {
       }
 
       "replace an existing value" in {
+        val expectedStr = "answer"
+        val expected = buildTreeStoring4(expectedStr)
 
+        val result = buildTreeStoring4("original")
+        result.insert(4, expectedStr)
+
+        result shouldBe expected
       }
+    }
+
+    "Merkle()" should {
+
+      // Task 2: with extra time would wrap up edge cases
+      "return hash of empty for a null root" in {
+        val trie = new TrieNode()
+        trie.MerkleRoot shouldBe Trie.nullMerkle
+      }
+
+      "return same hash for same tree" in {
+        val expected = buildTreeStoring4("hey").MerkleRoot
+        val result = buildTreeStoring4("hey").MerkleRoot
+        result shouldBe expected
+      }
+
+      "return different hash for different trees" in {
+        val expected = buildTreeStoring4("asdfasdfasd").MerkleRoot
+        val result = buildTreeStoring4("xxxxxx").MerkleRoot
+        result should not equal expected
+      }
+
+
+      // Task 3: timer tests are finicky, need multiple impls to compare but ran out of time on problem
     }
   }
 }
