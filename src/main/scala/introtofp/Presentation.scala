@@ -74,7 +74,7 @@ object Animals_FunctionalProgramming extends App {
   // pattern matching! now that's a nice feature (coming to Python soon...)
   def noise(animal: Animal): String = animal match {
     case Dog() => "Woof"
-    case Cat() => "Meow" // what if I remove this line? will i get an error at runtime or compile time?
+//    case Cat() => "Meow" // what if I remove this line? will i get an error at runtime or compile time?
   }
 
   println(noise(Cat()))
@@ -95,6 +95,11 @@ object TypeclassMotivation{
   }
 }
 
+/**
+  * Turns out this has a name: Ad-hoc Polymorphism
+  *   The types of polymorphism we're previously familiar with are Subtyping (inheritance) and Parametric (using Generics).
+  *   See: https://en.wikipedia.org/wiki/Polymorphism_(computer_science)
+  */
 object Animals_Typeclass extends App {
   type CustomBinaryFormat = String // imagine this is a fancy class
 
@@ -103,7 +108,10 @@ object Animals_Typeclass extends App {
     def customBinary(t: T): CustomBinaryFormat
   }
 
-  // Now we need the type class instances to provide "evidence" for particular types
+  // Now we need the type class instances to provide "evidence" for particular types.
+  // `implicit` is a fancy keyword that puts things into an additional "implicit" scope,
+  //    which allows the compiler to try to automatically resolve.
+  //    This can create some pretty wild (though completely safe!) functionality, as we'll see soon...
   import Animals_FunctionalProgramming._
   implicit object DogIsDbWritable extends CustomDbWritable[Dog]{
     override def customBinary(t: Dog): CustomBinaryFormat = "CustomBinaryDoggo!"
@@ -112,11 +120,14 @@ object Animals_Typeclass extends App {
     override def customBinary(t: String): CustomBinaryFormat = s"CustomBinaryString $t"
   }
 
-  // finally, some syntactic sugar ("extension method") to look like it's a native method
-  //  (this is annoying boilerplate that's going away in Scala 3, just ignore...)
-  implicit class RichWritable[T : CustomDbWritable](in: T){
-    def customBinary: CustomBinaryFormat = implicitly[CustomDbWritable[T]].customBinary(in)
+  // finally, some boilerplate for syntactic sugar to look like it's a native method (called an "extension method")
+  implicit class RichWritable[T](in: T)(implicit writable: CustomDbWritable[T]){
+    def customBinary: CustomBinaryFormat = writable.customBinary(in)
   }
+
+  println("hello world!".customBinary)
+  println(Dog().customBinary)
+//  println(1.customBinary) // doesn't work!
 }
 
 object Animals_Typeclass_App extends App {
@@ -129,6 +140,9 @@ object Animals_Typeclass_App extends App {
     writeToDB(bin)
     bin // in scala, there's no explicit 'return'; it's always just the last statement in a block.
   }
+  // A note on implicits: the following two signatures are identical.
+  def serializeAndWriteToDb2[T : CustomDbWritable](writable: T): CustomBinaryFormat = ???
+  def serializeAndWriteToDb3[T](writable: T)(implicit ev: CustomDbWritable[T]): CustomBinaryFormat = ???
 
   println(serializeAndWriteToDb("Hello world!"))
   println(serializeAndWriteToDb(Dog()))
@@ -138,63 +152,97 @@ object Animals_Typeclass_App extends App {
 // ================================================================================
 // Dependent Types
 
-object DependentTypesMotivation {
+object DependentTypes_Motivation {
   // DISCUSS: What could go wrong with this function?
-  def travelTime(startPoint: Double, endPoint: Double, speed: Double): Double = {
-    endPoint - speed // ouch! Somebody skipped physics...
+  def travelTime(distance: Double, speed: Double): Double = {
+    distance - speed // ouch! Somebody skipped physics...
   }
 
   // How about this?
-  // `travelTime(startPointInMeters, endPointInFeet, speedInMetersPerSecond)`
+  // `travelTime(distanceInMeters, speedInMilesPerHour)`
 }
 
+/**
+  * Let's talk about "lifting the algebra of our operations into the type system",
+  *   and basically create our own DSL!
+  *
+  * DISCUSS: any ideas on how we could do this?
+  */
+object DependentTypes_FoundationalDSL {
 
-object DependentTypesDSL extends App {
-
+  // The basis of our DSL is a wrapper class around Double.
+  //   Notice the return type uses `evidence.Out` - this is a "dependant type" we don't know yet!
   case class Numeric[A](in: Double){
-    def -(other: Numeric[A]): Numeric[A] = (in - other.in).withUnits[A]
-    def /[B](other: Numeric[B])(implicit ev: A CanDivideBy B): Numeric[ev.Out] = {
-      ev.divide(this, other)
-    }
+    def -(other: Numeric[A]): Numeric[A] = Numeric[A](in - other.in)
+    def *[B](other: Numeric[B])(implicit canMultiply: A CanMultiplyBy B): Numeric[canMultiply.Out] =
+      canMultiply.multiply(this, other)
+    def /[B](other: Numeric[B])(implicit canDivide: A CanDivideBy B): Numeric[canDivide.Out] =
+      canDivide.divide(this, other)
   }
 
+  // Now we have some types of "evidence" that will form the basis of "proofs" in our DSL.
+  //   Notice again the unimplemented `type Out` - this is a "dependant type" we don't know yet!
+  trait CanMultiplyBy[A, B]{
+    type Out
+    def multiply(a: Numeric[A], b: Numeric[B]): Numeric[Out] = Numeric[Out](a.in * b.in)
+  }
+  trait CanDivideBy[Num, Denom] {
+    type Out
+    def divide(num: Numeric[Num], denom: Numeric[Denom]): Numeric[Out] = Numeric[Out](num.in / denom.in)
+  }
+  // this is just some boilerplate, see "Aux pattern"
+  type CanMultiplyByAux[A, B, Result] = CanMultiplyBy[A, B]{ type Out = Result }
+  type CanDivideByAux[Num, Denom, Result] = CanDivideBy[Num, Denom]{ type Out = Result }
+
+  // now, let's give ourselves a way to declare that we're able to
+  def dividing[A]: DividingBuilder1[A] = new DividingBuilder1
+  class DividingBuilder1[A]{ def by[B]: DividingBuilder2[A, B] = new DividingBuilder2() }
+  class DividingBuilder2[A, B]{ def yields[C]: CanDivideByAux[A, B, C] = new CanDivideBy[A, B]{ type Out = C } }
+  def multiply[A]: MultiplyBuilder1[A] = new MultiplyBuilder1
+  class MultiplyBuilder1[A]{ def by[B]: MultiplyBuilder2[A, B] = new MultiplyBuilder2() }
+  class MultiplyBuilder2[A, B]{ def toGet[C]: CanMultiplyByAux[A, B, C] = new CanMultiplyBy[A, B]{ type Out = C } }
+
+  // Define a set of programmatic rules to get the compiler to programmatically build more of the operations...
+  //  i.e. if you know you can multiply safely, you can also divide!
+  implicit def ifYouCanMultiplyYouCanDivide_1[A, B, Out](implicit ev: CanMultiplyByAux[A, B, Out]): CanDivideByAux[Out, A, B] = dividing [Out] .by [A] .yields [B]
+  implicit def ifYouCanMultiplyYouCanDivide_2[A, B, Out](implicit ev: CanMultiplyByAux[A, B, Out]): CanDivideByAux[Out, B, A] = dividing [Out] .by [B] .yields [A]
+  implicit def ifYouCanMultiplyYouCanDivide_3[A, B, Out](implicit ev: CanMultiplyByAux[A, B, Out]): CanDivideByAux[A, Out, B] = dividing [A] .by [Out] .yields [B]
+  implicit def ifYouCanMultiplyYouCanDivide_4[A, B, Out](implicit ev: CanMultiplyByAux[A, B, Out]): CanDivideByAux[B, Out, A] = dividing [B] .by [Out] .yields [A]
+}
+
+object DependentTypes_MetersAndSecondsUnitSystem {
+  import DependentTypes_FoundationalDSL._
+
+  // Let's start by defining some sample units...
   type MetersUnit
   type SecondsUnit
   type MetersPerSecondUnit
   type Meters = Numeric[MetersUnit]
   type Seconds = Numeric[SecondsUnit]
   type MetersPerSecond = Numeric[MetersPerSecondUnit]
-  def attach[T](in: Double): Numeric[T] = Numeric[T](in)
-  implicit class RichDouble(in: Double){
-    def withUnits[T]: Numeric[T] = Numeric[T](in)
+
+  // a bit more syntax...
+  implicit class NewRichDouble(in: Double){
     def meters: Meters = Numeric[MetersUnit](in)
     def seconds: Seconds = Numeric[SecondsUnit](in)
     def metersPerSecond: MetersPerSecond = Numeric[MetersPerSecondUnit](in)
   }
 
-  trait CanDivideBy[Num, Denom] {
-    type Out
-    def divide(num: Numeric[Num], denom: Numeric[Denom]): Numeric[Out] = (num.in / denom.in).withUnits[Out]
-  }
-  type CanDivideByAux[Num, Denom, Result] = CanDivideBy[Num, Denom]{ type Out = Result }
+  // Given all our type inference rules, defining a new rule for our algebra is super easy!
+  //  The key is, adding new units and rules is only a couple lines - the rest is generated by the compiler :D
+  implicit val rule1: CanMultiplyByAux[MetersUnit, SecondsUnit, MetersPerSecondUnit] =
+    multiply [MetersUnit] .by [SecondsUnit] .toGet [MetersPerSecondUnit]   // look how intuitive defining a new rule is!
+}
 
-  // just some boilerplate so we can have nice syntax...
-  def dividing[A]: Builder1[A] = new Builder1
-  class Builder1[A]{ def by[B]: Builder2[A, B] = new Builder2() }
-  class Builder2[A, B]{
-    def yields[C]: CanDivideByAux[A, B, C] = new CanDivideBy[A, B]{ type Out = C }
-  }
-
-  // now defining a new rule for our algebra is super easy!
-  implicit val rule1 = dividing [MetersUnit] .by [MetersPerSecondUnit] .yields [SecondsUnit]
+object DependentTypes_ApplicationCode extends App {
+  import DependentTypes_FoundationalDSL._
+  import DependentTypes_MetersAndSecondsUnitSystem._
 
   // Now, the application code!
-  def travelTime(startPoint: Meters, endPoint: Meters, speed: MetersPerSecond): Seconds = {
-    val distance: Meters = endPoint - startPoint
-    val time: Seconds = distance / speed // wow! neat!
+  def travelTime(distance: Meters, speed: MetersPerSecond): Seconds = {
+    val time: Seconds = distance / speed  // even though the `/` function has no idea the type, the compiler figures it out!
     time
   }
 
-  println(travelTime(20.meters, endPoint = 120.meters, speed = 5.metersPerSecond))
-
+  println(travelTime(distance = 20.meters, speed = 5.metersPerSecond))
 }
