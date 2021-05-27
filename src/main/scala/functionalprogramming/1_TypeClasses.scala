@@ -1,5 +1,8 @@
 package functionalprogramming
 
+import Animals_FunctionalProgramming._
+
+
 /**
   * TYPE CLASSES
   *
@@ -11,11 +14,15 @@ package functionalprogramming
   *   and we want it to work for not only Dogs, but Strings too?
   */
 object TypeclassMotivation{
-  type CustomBinaryFormat = String // imagine this is a fancy class
+
+  // interface
+  type CustomBinaryFormat = String // imagine this is a fancy datatype
   trait CustomDbWritable { // trait == interface
     def customBinary(): CustomBinaryFormat
   }
-  def writeToDB(bin: CustomBinaryFormat): Unit = () // imagine this is also fancy
+
+  // application code
+  def writeToDB(bin: CustomBinaryFormat): Unit = ???  // Scala "Unit" is equivalent to Java "void" / Python "None"
   def serializeAndWriteToDb(writable: CustomDbWritable): Unit = {
     writeToDB(writable.customBinary())
   }
@@ -30,7 +37,7 @@ object TypeclassMotivation{
   *   See: https://en.wikipedia.org/wiki/Polymorphism_(computer_science)
   */
 object Animals_Typeclass extends App {
-  type CustomBinaryFormat = String // imagine this is a fancy class
+  type CustomBinaryFormat = String
 
   // first a new trait - notice the type parameter; this says to us and the compiler "T Is CustomDbWritable"
   trait IsCustomDbWritable[T] {
@@ -41,7 +48,6 @@ object Animals_Typeclass extends App {
   // `implicit` is a fancy keyword that puts things into an additional "implicit" scope,
   //    which allows the compiler to try to automatically resolve.
   //    This can create some pretty wild (though completely safe!) functionality, as we'll see soon...
-  import Animals_FunctionalProgramming._
   implicit object Dog_IsCustomDbWritable extends IsCustomDbWritable[Dog]{
     override def customBinary(t: Dog): CustomBinaryFormat = "CustomBinaryDoggo!"
   }
@@ -51,23 +57,28 @@ object Animals_Typeclass extends App {
 
   // finally, some boilerplate for syntactic sugar to look like it's a native method (called an "extension method")
   implicit class RichWritable[T](in: T)(implicit writable: IsCustomDbWritable[T]){
-    def customBinary: CustomBinaryFormat = writable.customBinary(in)
+    def customBinary(): CustomBinaryFormat = writable.customBinary(in)
   }
 
-  println("hello world!".customBinary)
-  println(Dog().customBinary)
-//  println(1.customBinary) // doesn't work!
 }
 
+object Animals_Typeclass_SimpleApp extends App {
+  import functionalprogramming.Animals_Typeclass._
+
+  println("hello world!".customBinary())
+  println(Dog().customBinary())
+  //  println(1.customBinary()) // doesn't work!
+}
+
+
 object Animals_Typeclass_App extends App {
-  import Animals_FunctionalProgramming._
   import functionalprogramming.Animals_Typeclass._
 
   def writeToDB(bin: CustomBinaryFormat): Unit = () // not important
   def serializeAndWriteToDb[T : IsCustomDbWritable](writable: T): CustomBinaryFormat = {
-    val bin = writable.customBinary
+    val bin = writable.customBinary()
     writeToDB(bin)
-    bin // in scala, there's no explicit 'return'; it's always just the last statement in a block.
+    bin
   }
 
   // A note on implicits: the following two signatures are identical.
@@ -76,5 +87,5 @@ object Animals_Typeclass_App extends App {
 
   println(serializeAndWriteToDb("Hello world!"))
   println(serializeAndWriteToDb(Dog()))
-  //  println(serializeAndWriteToDb(1)) // doesn't work, there's no type class evidence!
+//  println(serializeAndWriteToDb(1)) // doesn't work, there's no type class evidence!
 }

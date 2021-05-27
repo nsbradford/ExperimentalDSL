@@ -15,15 +15,13 @@ import scala.util.{Failure, Success, Try}
   */
 object TDD_Motivation {
   // TODO: first day on your new job! You get ticket: "implement this function. return error on failure"
-  def updateHeight(session: Int, height: Int): Unit = {
-    import LibraryFunctions._
-    val user = getUser(session)
-    updateUser(user, height)
-  }
+  def updateHeight(session: Int, height: Int): Unit = ???
+
+  // other functions you find around the codebase...
   object LibraryFunctions {
     // these look useful...
     def getUser(session: Int): Int = ???
-    def updateUser(user: Int, height: Int): Unit = ??? // Scala "Unit" is equivalent to Java "void" / Python "None"
+    def updateUser(user: Int, height: Int): Unit = ???
 
     // wait a sec... do I need these?
     def validateHeight(height: Int): Int = ???
@@ -75,4 +73,8 @@ object TDD_TypeDrivenSolution {
 /**
   * DISCUSS: do we think the type-driven solution is more readable/approachable + less error-prone?
   *   Did the function feel like it "writes itself"? That's what we mean by Type-Driven Development :D
+  */
+
+/**
+  * DISCUSS: could we go even farther with our type safety and FP design? How about side effects?
   */

@@ -30,10 +30,10 @@ import scala.util.Try
 object Functor_Motivation {
   def foo(x: Int): String = (x * 2).toString
 
-  // right! we use our classic `map` operation!
+  // we use our classic `map` operation!
   val list: List[String] = List(1, 2, 3).map(foo)
 
-  // and so on...
+  // turns out you can do this for a lot of containers/computational contexts
   val future: Future[String] = Future(1).map(foo)
 
   // is there any limit to the number of times you chain operations?
@@ -58,12 +58,12 @@ object Functor_UsingTheTypeClass extends App {
   import cats._
   import cats.implicits._
 
-  def multiplyAnyFunctorBy2[F[_]: Functor](fa: F[Int]): F[String] = fa.map(Functor_Motivation.foo) // equivalent to Functor[F].map(fa)(_.toString)
+  def multiplyAnyFunctorBy2[F[_]: Functor](fa: F[Int]): F[String] = fa.map(Functor_Motivation.foo)
 
   println( multiplyAnyFunctorBy2(List(100, 100, 100)) )
   println( multiplyAnyFunctorBy2[Option](Some(100)) )
   println( multiplyAnyFunctorBy2(Try(100)) )
-  println( multiplyAnyFunctorBy2(Future(100)) ) // see result with: Await.result(multiplyAnyFunctorBy2(Future(100).), 10.seconds)
+  println( multiplyAnyFunctorBy2(Future(100)) )
 }
 
 /**
@@ -181,10 +181,16 @@ object Monad_Demos {
 
 
 /**
+  * RECAP
+  *   - Functors: for static, linear operations
+  *   - Applicatives for static, parallel operations
+  *   - Monads for dynamic, dependent computations
+  *
   * DISCUSS:
   *   How do you feel about Monads?
   *     Feel like you understand them?
   *     Wondering why everyone makes such a big deal about them?
   *     Wondering why everyone explains it by saying "a monad is just a monoid in the category of endofunctors"?
   *   Why/why not is it useful to have these three levels of separation (Functor, Applicative, Monad)?
+  *
   */

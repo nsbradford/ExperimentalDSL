@@ -14,25 +14,18 @@ package functionalprogramming
   */
 
 /**
-  * Details:
-  *
-  * Intro
-  *   - OO vs FP design: Data vs Functional extensibility
-  *   - Type-driven development walkthrough
-  *
-  * Fancy type stuff:
-  *   - Ad-hoc polymorphism with Type Classes
-  *   - Dependent types
-  *
-  * Useful type classes (high-level concepts):
-  *   - Functors for static, linear operations
-  *   - Applicatives for static, parallel operations
-  *   - Monads for dynamic, dependent computations (yes, we're going to explain Monads and it'll be super easy!)
+  * Agenda:
+  *   Intro: OO vs FP design
+  *   Type classes
+  *   Useful type classes (high-level concepts): Functors, Applicatives, and Monads!
+  *   Type-driven development case study (maybe we'll see a Monad in the wild...)
+  *   Advanced: Building a DSL with Dependent types
   *
   * Objectives to keep in mind:
   *   - I want the compiler to do AS MUCH WORK AS POSSIBLE
   *   - I want to elegantly express VERY HIGH LEVEL common code patterns
-  * Turns out, these are very complementary goals.
+  * Turns out, these are very complementary goals!
+  *
   */
 
 
@@ -59,13 +52,13 @@ package functionalprogramming
   */
 object Animals_ObjectOriented {
   abstract class Animal{
-    def noise: String
+    def noise(): String
   }
   class Dog extends Animal {
-    override def noise: String = "Woof"
+    override def noise(): String = "Woof" // scala functions have no "return"; they always return the final statement
   }
   class Cat extends Animal {
-    override def noise: String = "Meow"
+    override def noise(): String = "Meow"
   }
 }
 
