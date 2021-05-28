@@ -7,6 +7,8 @@ import scala.concurrent.Future
 
 
 /**
+  * CONCLUSION
+  *
   * THESIS:
   *   Monads and other FP concepts are useful (and ubiquitous) abstractions to recognize.
   *     I think of it as learning Chord Progressions for music, Archetypes/Hero's Journey for storytelling, etc.

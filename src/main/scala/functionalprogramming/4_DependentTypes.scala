@@ -1,10 +1,9 @@
 package functionalprogramming
 
 
-// ================================================================================
-// Dependent Types
-
 /**
+  * DEPENDENT TYPES
+  *
   * DISCUSS: What could go wrong with this function?
   */
 object DependentTypes_Motivation {

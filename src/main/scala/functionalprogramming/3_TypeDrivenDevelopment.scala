@@ -3,10 +3,9 @@ package functionalprogramming
 import scala.util.{Failure, Success, Try}
 
 
-// ================================================================================
-// Type-Driven Development: philosophy
-
 /**
+  * TYPE-DRIVEN DEVELOPMENT
+  *
   * DISCUSS: What is type-driven development? (The other TDD, heheh)
   */
 

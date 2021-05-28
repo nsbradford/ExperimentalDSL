@@ -7,6 +7,8 @@ import scala.util.Try
 
 
 /**
+  * Core type classes: Functors, Applicatives, and Monads
+  *
   * Now that we've seen a bit of what you can do with types, let's view some of the
   *   foundational concepts, expressed as type classes, which empower you in FP!
   *   (Yes, that'll include Monads - with no category theory, just practical examples!)
