@@ -4,6 +4,7 @@ import scala.concurrent.Future
 import scala.util.Try
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
+import scala.language.higherKinds
 
 
 /**
@@ -13,6 +14,9 @@ import scala.concurrent.Future
   *   Monads and other FP concepts are useful (and ubiquitous) abstractions to recognize.
   *     I think of it as learning Chord Progressions for music, Archetypes/Hero's Journey for storytelling, etc.
   *   They're useful tools for thought - and if your language supports it, also can clarify your code.
+  *
+  *   See if you're interested:
+  *     https://github.com/nsbradford/ExperimentalDSL/tree/master/src/main/scala/functionalprogramming
   */
 
 /**

@@ -28,9 +28,9 @@ object TDD_Motivation {
   }
 }
 
-object TDD_CorrectSolution {
+object TDD_CorrectSolution extends App {
   import TDD_Motivation.LibraryFunctions._
-  def validateAndUpdate(session: Int, height: Int): Unit = {
+  def updateHeight(session: Int, height: Int): Unit = {
     val heightInCm: Int = convertToCm(height)
     val validatedHeight: Int = validateHeight(heightInCm) // does this have side-effects?
     val user: Int = getUser(session)
@@ -56,17 +56,38 @@ object TDD_TypeDrivenSolution {
   def convertToCm(inches: Inches): Centimeters = ???
 
   // TODO let's try to implement together!
-  def validateAndUpdate(session: SessionId, height: Inches): Try[Unit] = ???
-//  def validateAndUpdate(session: SessionId, height: Inches): Try[Unit] = {
-//    val heightInCm: Centimeters = convertToCm(height)
+//  def updateHeight(session: SessionId, height: Inches): Try[Unit] = ???
+  def validateAndUpdate(session: SessionId, height: Inches): Try[Unit] = {
+    val heightInCm: Centimeters = convertToCm(height)
+    val userId: Try[UserId] = getUser(session)
+    val validatedHeight: Try[ValidatedHeight] = validateHeight(heightInCm)
+//    val update: Try[Unit] = updateUser(userId, validatedHeight)
+
+//      val update: Try[Unit] = userId.flatMap{ id =>
+//        validatedHeight.flatMap(height =>
+//          updateUser(id, height)
+//        )
+//      }
+
 //
 //    // If the DB read succeeds, try to write. If it fails, pass along the error to the caller.
-//    for { // IT'S THE RETURN OF THE MONAD!!!
-//      userId: UserId <- getUser(session)
-//      validatedHeight: ValidatedHeight <- validateHeight(heightInCm)
-//      update: Unit <- updateUser(userId, validatedHeight)
-//    } yield update
-//  }
+    for { // IT'S THE RETURN OF THE MONAD!!!
+      userId: UserId <- getUser(session)
+      validatedHeight: ValidatedHeight <- validateHeight(heightInCm)
+      update: Unit <- updateUser(userId, validatedHeight)
+    } yield update
+  }
+
+  val x: Option[Int] = Some(1)
+  val y: Option[Int] = Some(1)
+  val z: Option[Int] = Some(1)
+
+  val q: Option[Int] = for { // = Some(3), not None
+    xx: Int <- x
+    yy: Int <- y
+    zz: Int <- z
+  } yield xx + yy + zz
+
 }
 
 /**

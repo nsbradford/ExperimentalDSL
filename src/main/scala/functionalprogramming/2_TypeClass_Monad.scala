@@ -86,7 +86,7 @@ object Applicatives_Motivation {
 
 // What we need is a new operation!
 trait MyApplicative[F[_]] extends MyFunctor[F] { // (simplified)
-  def pure[A](a: A): F[A] // Lift an ordinary value into our context.
+  def pure[A](a: A): F[A] // Lift an ordinary value into our context. List() constructor for list
   def tupled[A, B](fa: F[A], fb: F[B]): F[(A, B)] // often called "product"
 }
 

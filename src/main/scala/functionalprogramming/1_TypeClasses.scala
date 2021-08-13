@@ -67,7 +67,7 @@ object Animals_Typeclass_SimpleApp extends App {
 
   println("hello world!".customBinary())
   println(Dog().customBinary())
-  //  println(1.customBinary()) // doesn't work!
+//  println(1.customBinary()) // doesn't work!
 }
 
 

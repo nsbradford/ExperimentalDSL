@@ -3,6 +3,7 @@ package functionalprogramming
 
 /**
   * DEPENDENT TYPES
+  * One of many "advanced" techniques
   *
   * DISCUSS: What could go wrong with this function?
   */
@@ -19,7 +20,10 @@ object DependentTypes_Motivation {
   *
   * DISCUSS: any ideas on how we could do this?
   *   Any ideas on how we could do this for ANY unit system?
+  *
+  * We're going to go in reverse order: first we'll see the solution, then explore the (messy) details...
   */
+
 object DependentTypes_FoundationalDSL {
 
   // The basis of our DSL is a wrapper class around Double.
@@ -81,21 +85,26 @@ object DependentTypes_MetersAndSecondsUnitSystem {
   }
 
   // TODO how do we express that you can:  multiply [MetersUnit] .by [SecondsUnit] .toGet [MetersPerSecondUnit] ?
-  implicit val rule1: CanMultiplyByAux[MetersUnit, SecondsUnit, MetersPerSecondUnit] = ???
+  implicit val rule1: CanMultiplyByAux[MetersUnit, SecondsUnit, MetersPerSecondUnit] =
+    multiply [MetersUnit] .by [SecondsUnit] .toGet [MetersPerSecondUnit]
   // that's it! no need to implement * and / operations for our custom units, they're handled by our DSL!
 }
 
-object DependentTypes_ApplicationCode extends App {
+object DependentTypes_ApplicationCodeRaw extends App {
   import DependentTypes_FoundationalDSL._
   import DependentTypes_MetersAndSecondsUnitSystem._
 
   // Now, the application code!
   def travelTime(distance: Meters, speed: MetersPerSecond): Seconds = {
-    val time = distance / speed  // even though the `/` function has no idea the type, the compiler figures it out!
+    val time: Numeric[SecondsUnit] = distance / speed  // even though the `/` function has no idea the type, the compiler figures it out!
 //    val time = distance * speed // doesn't compile anymore! :D
+
+    val x: Meters = 1.meters
+    val y: MetersPerSecond = x * time
     time
   }
 
+  // ah, nice syntax!
   println(travelTime(distance = 20.meters, speed = 5.metersPerSecond))
 
   // Given all our type inference rules in our DSL, defining a new rule for our algebra is super easy!
