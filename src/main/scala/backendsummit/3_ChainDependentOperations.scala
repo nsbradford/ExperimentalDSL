@@ -19,7 +19,7 @@ trait MyMonad[Container[A]] extends MyFunctor[Container] {
 
   // If you can flatMap(), you have yourself a Monad!
   def flatMap[A, B](fa: Container[A])(f: A => Container[B]): Container[B]
-  def pure[A](a: A): Container[A] // this just says "I can lift any value `A` into my Monadic context"
+  def pure[A](a: A): Container[A] // this just says "I can lift any value into my Monadic context"
 
   // flatMap() is exactly equivalent to map() + flatten()!
   override def map[A, B](fa: Container[A])(f: A => B): Container[B] = flatMap(fa)(a => pure(f(a)))
@@ -28,9 +28,49 @@ trait MyMonad[Container[A]] extends MyFunctor[Container] {
 
 
 /**
-  * What if we wanted our application code to be separated from its context?
+  * What does this look like in practice?
+  *   Well, turns out most programs are chains of dependent operations within a context!
+  */
+object Monad_Demos {
+
+  object DB {
+    def get_username(): Option[String] = ???
+    def query_db_for_id(username: String): Option[Int] = ???
+    def query_db_for_friends(id: Int): Option[List[String]] = ???
+  }
+  import DB._
+
+  // what we want to do (verbose):
+  val chain_callbacks_verbose: Option[List[String]] =
+    get_username().flatMap{ username =>
+      query_db_for_id(username).flatMap{ id =>
+        query_db_for_friends(id)
+      }
+    }
+
+  // also equivalent to:
+  val chain_queries: Option[List[String]] =
+    get_username()
+      .flatMap(query_db_for_id)
+      .flatMap(query_db_for_friends)
+
+  // a "for-comprehension" is a generalization of python's list comprehension, which works for any monad!
+  val chain_queries_readable: Option[List[String]] =
+    for {
+      username <- get_username()
+      id <- query_db_for_id(username)
+      friends <- query_db_for_friends(id)
+    } yield friends
+
+  // these "for-comprehensions" are ubiquitous in FP code;
+  //  they are a generic way to write imperative-looking code within a "computational context"
+}
+
+/**
+  * What if we wanted our application code to be separated from its context,
+  *   to "abstract over different contexts/Monads"?
   *
-  * I.e. what if we wanted one version of the backend to run Async, the other Sync
+  * E.g. what if we wanted one version of the backend to run Async, the other Sync
   */
 object Monad_TaglessFinal extends App {
 
@@ -41,14 +81,14 @@ object Monad_TaglessFinal extends App {
   }
 
   // `Option` is sync, and we can use to represent operations which may fail
-  class TestDB extends DB[Option]{
+  class SyncTestDB extends DB[Option]{
     override def get_username(): Option[String] = Some("Nick")
     override def query_db_for_id(username: String): Option[Int] = Some(1)
     override def query_db_for_friends(id: Int): Option[List[String]] = Some(List("Friend1", "Friend2"))
   }
 
   // `Future` represents an "async context"; the value may or may not appear in the future
-  class ProductionDB extends DB[Future] {
+  class AsyncProductionDB extends DB[Future] {
     override def get_username(): Future[String] = Future("Async Nick")
     override def query_db_for_id(username: String): Future[Int] = Future(1)
     override def query_db_for_friends(id: Int): Future[List[String]] = Future(List("Async Friend1", "Async Friend2"))
@@ -64,9 +104,14 @@ object Monad_TaglessFinal extends App {
     } yield friends
   }
 
-  val prod_result: Future[List[String]] =    chain_contextless_sequence(new ProductionDB())
-  val test_result: Option[List[String]] =    chain_contextless_sequence(new TestDB())
+  val sync_result: Option[List[String]] =  chain_contextless_sequence(new SyncTestDB())
+  val async_result: Future[List[String]] = chain_contextless_sequence(new AsyncProductionDB())
 
-  println(prod_result)
-  println(test_result)
+  println(sync_result)
+  println(async_result)
 }
+
+
+/**
+  * DISCUSS: What do we think?
+  */

@@ -36,7 +36,7 @@ object MiniPresentationWithOptions {
   def convertOptionIntToStr(myOption: Option[Int]): Option[(Int, Int)] = {
     var answer: Option[(Int, Int)] = None
     if (myOption != None)
-      answer = Some((myOption.get, myOption.get)) // safe to use get()
+      answer = Some((myOption.get, myOption.get)) // safe to use `get`
     return answer
   }
 

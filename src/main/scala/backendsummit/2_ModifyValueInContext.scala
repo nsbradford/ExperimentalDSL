@@ -18,7 +18,6 @@ object OptionsWithPowerUp {
   /**
     * Now, whenever we have an Option[A] and want to turn it into an Option[B],
     *   we know that we can use `map()` and there's **no way to mess it up!**
-    *   The code "writes itself" because
     */
   def convertOptionIntToStr(myOption: Option[Int]): Option[(Int, Int)] = {
     return myOption.map(int => (int, int)) // this is a Scala-style lambda function
@@ -87,7 +86,7 @@ object WhatIsLeftToExpress_Flat {
 
   // Uh-oh! We want Option[String], not Option[Option[String]]!
   // How do we get rid of the nesting?
-  val userId = 1
+  val userId: Int = 1
   val validatedUsername: Option[Option[String]] = getUserName(userId).map(validateUsername)
 }
 
@@ -112,8 +111,8 @@ object WhatIsLeftToExpress_Choice {
     def choose[A, B](input: Option[A], decision: A => Option[B]): Option[B] = ???
   }
 
-  // Maximum generality! We've encoding the idea of "choosing", or dependency, into the types!
+  // Maximum generality! We've encoding the idea of "choosing", or dependency chaining, into the types!
   object Part4 {
-    def flatMap[F[_], A, B](input: F[A], f: A => F[B]): F[B] = ???
+    def flatMap[Container[_], A, B](input: Container[A], f: A => Container[B]): Container[B] = ???
   }
 }
